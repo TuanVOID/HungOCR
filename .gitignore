@@ -44,3 +44,8 @@ test_tipc/web/node_modules/
 ocr_output_vi*/
 ocr_results_vietocr.txt
 *.log
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example

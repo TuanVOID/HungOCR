@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PaddleOCR Test UI</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}" />
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <div class="hero-copy">
+        <p class="eyebrow">PaddleOCR backend test</p>
+        <h1>Upload file, extract text, and inspect the result on screen.</h1>
+        <p class="subtext">
+          Chọn ảnh hoặc PDF, gửi lên backend Flask, rồi xem text OCR ngay bên dưới hoặc tải xuống TXT / Excel.
+        </p>
+      </div>
+      <div class="hero-badge">
+        <span>Endpoint</span>
+        <strong>POST /ocr</strong>
+      </div>
+    </section>
+
+    <section class="panel">
+      <form id="ocr-form" class="upload-card">
+        <label class="dropzone" for="files">
+          <input id="files" name="files" type="file" multiple accept="image/*,.pdf" />
+          <div class="dropzone-inner">
+            <strong>Kéo thả hoặc bấm để chọn file</strong>
+            <span>Hỗ trợ ảnh và PDF. Có thể chọn nhiều file một lần.</span>
+          </div>
+        </label>
+
+        <div id="file-list" class="file-list"></div>
+
+        <div id="excel-options" class="excel-options hidden" aria-live="polite">
+          <label class="export-option" for="use-llm">
+            <input id="use-llm" type="checkbox" />
+            <span>
+              Dùng LLM khi xuất Excel
+              <small>Tắt để xuất nhanh. Bật để Ollama chuyển OCR text sang cột.</small>
+            </span>
+          </label>
+          <p class="excel-hint">Bấm Download Excel lần nữa sau khi chọn xong.</p>
+        </div>
+
+        <div class="actions">
+          <button id="submit-btn" type="submit">Run OCR</button>
+          <button id="clear-btn" type="button" class="secondary">Clear</button>
+          <button id="download-btn" type="button" class="secondary" disabled>Download TXT</button>
+          <button id="download-xlsx-btn" type="button" class="secondary" disabled>Download Excel</button>
+          <span id="status" class="status">Chưa chọn file nào.</span>
+        </div>
+      </form>
+    </section>
+
+    <section class="panel">
+      <div class="result-box">
+        <div class="section-head">
+          <h2>OCR Text</h2>
+          <span id="result-meta">Chưa có kết quả.</span>
+        </div>
+        <div id="results" class="results empty">
+          Chọn file rồi bấm Run OCR để xem text ở đây.
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

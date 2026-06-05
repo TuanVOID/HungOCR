@@ -103,7 +103,90 @@ def sort_lines(lines_data, y_tolerance=12.0):
             
     return sorted_items
 
-def run_composite_ocr(file_path, output_txt_path, use_gpu=False):
+
+def format_layout_preserving(lines_data, y_tolerance=12.0, target_char_width=100):
+    if not lines_data:
+        return ""
+        
+    processed = []
+    for idx, item in enumerate(lines_data):
+        box = item["box"]
+        pts = np.array(box, dtype=np.float32)
+        min_x = float(np.min(pts[:, 0]))
+        max_x = float(np.max(pts[:, 0]))
+        min_y = float(np.min(pts[:, 1]))
+        max_y = float(np.max(pts[:, 1]))
+        center_y = (min_y + max_y) / 2.0
+        processed.append({
+            "item": item,
+            "min_x": min_x,
+            "max_x": max_x,
+            "min_y": min_y,
+            "max_y": max_y,
+            "center_y": center_y,
+            "height": max_y - min_y
+        })
+        
+    processed.sort(key=lambda x: x["min_y"])
+    
+    lines = []
+    for p in processed:
+        added = False
+        for line in lines:
+            avg_center_y = sum(x["center_y"] for x in line) / len(line)
+            avg_height = sum(x["height"] for x in line) / len(line)
+            tolerance = max(y_tolerance, avg_height * 0.5)
+            if abs(p["center_y"] - avg_center_y) < tolerance:
+                line.append(p)
+                added = True
+                break
+        if not added:
+            lines.append([p])
+            
+    for line in lines:
+        line.sort(key=lambda x: x["min_x"])
+        
+    lines.sort(key=lambda line: sum(x["center_y"] for x in line) / len(line))
+    
+    # Calculate global page horizontal bounds
+    page_min_x = min(p["min_x"] for p in processed)
+    page_max_x = max(p["max_x"] for p in processed)
+    page_width = page_max_x - page_min_x
+    if page_width <= 0:
+        page_width = 1.0
+
+    reconstructed_lines = []
+    for line in lines:
+        line_chars = [" "] * target_char_width
+        last_end_idx = 0
+        for idx, p in enumerate(line):
+            # Map start X to character index
+            start_col = int(((p["min_x"] - page_min_x) / page_width) * (target_char_width - 1))
+            text = p["item"]["text"]
+            
+            # Avoid overlap with previous text blocks on the same line
+            if start_col < last_end_idx:
+                start_col = last_end_idx
+                # Insert a space if it is not overlapping physically
+                if idx > 0 and p["min_x"] > line[idx - 1]["max_x"] + 3:
+                    start_col += 1
+            
+            # Write characters to line buffer
+            for i, char in enumerate(text):
+                col_idx = start_col + i
+                if col_idx < len(line_chars):
+                    line_chars[col_idx] = char
+                else:
+                    line_chars.append(char)
+            
+            last_end_idx = start_col + len(text)
+            
+        reconstructed_lines.append("".join(line_chars).rstrip())
+        
+    return "\n".join(reconstructed_lines)
+
+
+def run_composite_ocr(file_path, output_txt_path, use_gpu=False, preserve_layout=False):
     if not IMPORTS_OK:
         print("Required libraries are not fully installed.")
         return
@@ -214,9 +297,13 @@ def run_composite_ocr(file_path, output_txt_path, use_gpu=False):
                 continue
                 
         # Sort lines
-        sorted_lines = sort_lines(page_lines)
-        for line in sorted_lines:
-            save_and_print(line["text"], out_file)
+        if preserve_layout:
+            layout_text = format_layout_preserving(page_lines)
+            save_and_print(layout_text, out_file)
+        else:
+            sorted_lines = sort_lines(page_lines)
+            for line in sorted_lines:
+                save_and_print(line["text"], out_file)
             
     out_file.close()
     print("\n" + "=" * 60)
@@ -228,6 +315,7 @@ if __name__ == "__main__":
     parser.add_argument("input_path", help="Path to PDF file or image.")
     parser.add_argument("--output", default="ocr_results_vietocr.txt", help="Path to output text file.")
     parser.add_argument("--gpu", action="store_true", help="Use GPU for PaddleOCR detector.")
+    parser.add_argument("--preserve-layout", action="store_true", help="Preserve spatial layout in plain text output.")
     args = parser.parse_args()
     
-    run_composite_ocr(args.input_path, args.output, use_gpu=args.gpu)
+    run_composite_ocr(args.input_path, args.output, use_gpu=args.gpu, preserve_layout=args.preserve_layout)

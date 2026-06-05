@@ -1,0 +1,85 @@
+============================================================
+Running COMPOSITE (PaddleOCR + VietOCR) on: 25-2025-nd-cp.signed_2pages.pdf
+============================================================
+Initializing PaddleOCR Detector...
+Initializing VietOCR Recognizer (vgg_seq2seq)...
+Using local weights: C:/Indti/project-gitclone/deepdoc_vietocr/vietocr/weight/vgg_seq2seq.pth
+Loaded PDF containing 2 pages.
+
+--- Processing Page 1 ---
+Detected 40 text blocks. Running recognition...
+                                                                                      TIDTO)
+                CHÍNH PHỦ              CỘNG HÒA XÃ HỌI CHỦ NGHĨA VIỆT NAM
+                                                Độc lập - Tự do - Hạnh phúc
+             Số: 25/2025/NĐ-CP               Hà Nội, ngày 21 tháng 02 năm 2025
+CỒNG THÔNG TIN ĐIỆN TỪ CHÍNH PHỦ           NGHỊ ĐỊNH
+ĐẾN   Chời... 2510222222   Quy định chức năng, nhiệm vụ, quyền hạn
+      Ngày                       và cơ cấu tổ chức của Bộ Nội vụ
+               Căn cứ Luật Tổ chức Chính phủ ngày 18 tháng 02 năm 2025;
+               Theo đề nghị của Bộ trưởng Bộ Nội vụ;
+               Chính phủ ban hành Nghị định quy định chức năng, nhiệm vu, quyền hạn
+          và cơ cấu tổ chức của Bộ Nội vụ
+               Điều 1. Vị trí và chức năng
+               Bộ Nội vụ là cơ quan của Chính phủ, thực hiện chức năng quản lý nhà thu tri
+          nước về các ngành, lĩnh vực: Tổ chức hành chính, sự nghiệp nhà nước, tổ chức
+          chính quyền địa phương, cán bộ, công chức, viên chức và công vụ, lao động
+          tiền lương, bảo hiếm xã hội, việc làm; an toàn, vệ sinh lao động, hội, quỹ xã
+          hội, quỹ từ thiện, tổ chức phi chính phủ, người có công; thanh niên; bình đăng
+          giới, văn thư, lưu trữ nhà nước; thi đua, khen thưởng và quản lý nhà nước đối
+          với các dịch vụ công thuộc ngành, lĩnh vực quản lý nhà nước của bộ theo quy
+          định của pháp luật
+               Điều 2. Nhiệm vụ và quyền hạn
+               Bộ Nội vụ thực hiện nhiệm vụ, quyền hạn theo quy định tại Luật Tổ
+          chức Chính phú, quy định của Chính phủ về chức năng, nhiệm vụ, quyền hạn
+          và cơ cấu tố chức của bộ, cơ quan ngang bộ và thực hiện những nhiệm vụ,
+          quyền hạn cụ thể sau đây:
+               1. Trình Chính phủ dự án luật, dự thảo nghị quốc hội, dự án
+          pháp lệnh, dự thảo nghị quyết của Ủy ban thường vụ Quốc hội, dự thảo nghị
+          định, nghị quyết của Chính phủ theo chương trình, kế hoạch xây dựng pháp luật
+          hàng năm của bộ đã được phê duyệt và các dự án, đề án, chương trình, nghị
+          quyết theo sự phân công của Chính phủ, Thủ tướng Chính phú; trình Chính
+          phủ, Thủ tướng Chính phủ chiến lược, quy hoạch, kế hoạch phát triển dài hạn,
+          trung hạn, hàng năm và các dự án, công trình quốc gia về ngành,
+          lĩnh vực thuộc phạm vi quản lý nhà nước của bộ.
+
+--- Processing Page 2 ---
+Detected 39 text blocks. Running recognition...
+                                                2
+      2, Trình Thủ tướng Chính phủ dự thảo quyết định, chương trình
+mục tiêu quốc gia, chương trình quốc gia, chương trình hành động quốc gia và
+các văn bản khác về ngành, lĩnh vực thuộc phạm vi quản lý nhà nước của bộ
+hoặc theo phân công
+      3. Ban hành thông tư, quyết định, chỉ thị và các văn bản khác thuộc phạm
+vi quản lý nhà nước của bộ.
+      4. Chỉ đạo, hướng dẫn và tổ chức thực hiện chức năng, nhiệm vụ, văn bản
+quy phạm pháp luật, chiến lược, quy hoạch, kế hoạch, chương trình mục tiêu
+quốc gia, chương trình quốc gia, chương trình hành động quốc gia và các đề
+án, dự án, công trình quan trọng quốc gia đã được ban hành hoặc phê duyệt;
+thông tin, tuyên truyền, phố biển, giáo dục pháp luật về các ngành, lĩnh vực
+thuộc phạm vi quản lý nhà nước của bộ.
+      5. Về tổ chức hành chính, sự nghiệp nhà nước:
+      a) Trình Chính phủ đề án cơ cấu tổ chức của Chính phủ theo nhiệm kỳ
+Quốc hội; đề án về thành lập mới, sáp nhập, hợp nhất, giải thể bộ;
+cơ quan ngang bộ, cơ quan thuộc Chính phủ; dự thảo nghị định quy định tổ
+chức các cơ quan chuyên môn thuộc Ủy ban nhân dân tỉnh, thành phố trực thuộc
+trung ương (gọi chung là cấp tỉnh), Ủy ban nhân dân huyện, quận, thị xã, thành
+phố thuộc tỉnh, thành phố thuộc thành phố trực thuộc trung ương (gọi chung là
+cấp huyện);
+      b) Thầm định dự thảo nghị định của Chính phủ quy định chức năng, nhiệm
+vụ, quyền hạn và cơ cấu tổ chức của các bộ, cơ quan ngang bộ, cơ quan thuộc
+Chính phủ, dự thảo quyết định của Thủ tướng Chính phủ quy định chức năng
+nhiệm vụ, quyền hạn và cơ cấu tổ chức của tổ chức thuộc thẩm quyền quyết
+định của Thủ tướng Chính phủ; đề án và dự thảo quyết định của Thủ tướng
+Chính phủ về việc thành lập, tổ chức lại, giải thể các tổ chức hành chính, đơn
+vị sự nghiệp công lập và các tổ chức tư vấn, phối hợp liên ngành do các bộ, cơ
+quan ngang bộ, cơ quan thuộc Chính phủ và Ủy ban nhân dân cấp tỉnh trình
+Thủ tướng Chính phủ;
+      c) Chủ trì, phối hợp với Văn phòng Chính phủ và các bộ, cơ quan ngang
+bộ, cơ quan thuộc Chính phủ rà soát lại lần cuối các dự thảo nghị định của
+Chính phủ quy định chức năng, nhiệm vụ, quyên hạn và cơ cấu tổ chức của các
+bộ, cơ quan ngang bộ, cơ quan thuộc Chính phủ trước khi trình Thủ tướng
+Chính phủ ký, ban hành;
+      d) Hướng dẫn việc rà soát chức năng, nhiệm vụ, quyền hạn và cơ cấu tổ
+chức của các bộ, cơ quan ngang bộ, cơ quan thuộc Chính phủ; tổng hợp, báo
+cáo Chính phủ quyết định điều chỉnh chức năng, nhiệm vụ, quyền hạn và cơ
+cấu tổ chức của các bộ, cơ quan ngang bộ, cơ quan thuộc Chính phủ;

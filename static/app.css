@@ -233,6 +233,43 @@ body {
   line-height: 1.45;
 }
 
+.import-options {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(17, 94, 89, 0.16);
+  background: rgba(255, 255, 255, 0.66);
+}
+
+.import-label {
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.select-control {
+  width: min(320px, 100%);
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(17, 94, 89, 0.18);
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--ink);
+  font: inherit;
+  outline: none;
+}
+
+.select-control:focus {
+  border-color: rgba(17, 94, 89, 0.5);
+  box-shadow: 0 0 0 3px rgba(17, 94, 89, 0.12);
+}
+
+.import-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
 .excel-options {
   display: grid;
   gap: 10px;

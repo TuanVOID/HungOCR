@@ -25,14 +25,30 @@
     <section class="panel">
       <form id="ocr-form" class="upload-card">
         <label class="dropzone" for="files">
-          <input id="files" name="files" type="file" multiple accept="image/*,.pdf" />
+          <input id="files" name="files" type="file" multiple accept="image/*,.pdf,.docx" />
           <div class="dropzone-inner">
             <strong>Kéo thả hoặc bấm để chọn file</strong>
-            <span>Hỗ trợ ảnh và PDF. Có thể chọn nhiều file một lần.</span>
+            <span>Hỗ trợ ảnh, PDF và Word (.docx). Có thể chọn nhiều file một lần.</span>
           </div>
         </label>
 
         <div id="file-list" class="file-list"></div>
+
+        <div class="import-options">
+          <label class="import-label" for="import-type">Loại import</label>
+          <select id="import-type" name="import-type" class="select-control">
+            <option value="clear">Rõ ràng (nhanh)</option>
+            <option value="complex">Phức tạp (chậm)</option>
+          </select>
+          <p class="import-hint">Chọn trước khi bấm Run OCR. Loại phức tạp sẽ ưu tiên độ kỹ hơn, nhưng chậm hơn.</p>
+          <label class="export-option" for="layout-preserve" style="margin-top: 8px;">
+            <input id="layout-preserve" type="checkbox" checked />
+            <span>
+              Giữ nguyên bố cục (TXT)
+              <small>Sử dụng khoảng trắng để sắp xếp các cột và đoạn văn bản tương tự bản gốc.</small>
+            </span>
+          </label>
+        </div>
 
         <div id="excel-options" class="excel-options hidden" aria-live="polite">
           <label class="export-option" for="use-llm">

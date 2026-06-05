@@ -5,17 +5,23 @@ const submitBtn = document.getElementById("submit-btn");
 const clearBtn = document.getElementById("clear-btn");
 const downloadBtn = document.getElementById("download-btn");
 const downloadXlsxBtn = document.getElementById("download-xlsx-btn");
+const importTypeSelect = document.getElementById("import-type");
 const useLlmCheckbox = document.getElementById("use-llm");
 const excelOptionsEl = document.getElementById("excel-options");
 const statusEl = document.getElementById("status");
 const resultsEl = document.getElementById("results");
 const resultMetaEl = document.getElementById("result-meta");
+const layoutPreserveCheckbox = document.getElementById("layout-preserve");
 
 let previewUrls = [];
 let lastOcrText = "";
 let lastOcrPayload = null;
 let lastDownloadName = "ocr-result.txt";
 let lastDownloadXlsxName = "ocr-result.xlsx";
+
+function getImportTypeLabel(value) {
+  return value === "complex" ? "Phức tạp (chậm)" : "Rõ ràng (nhanh)";
+}
 
 function humanSize(bytes) {
   if (!Number.isFinite(bytes)) {
@@ -85,6 +91,25 @@ function renderFileCards(files) {
     return;
   }
 
+  if (files.length > 10) {
+    statusEl.textContent = `Lỗi: Chỉ được chọn tối đa 10 file (Hiện đang chọn ${files.length} file).`;
+    return;
+  }
+
+  const maxSingleSize = 10 * 1024 * 1024; // 10MB
+  const hasTooLargeFile = files.some(file => file.size > maxSingleSize);
+  if (hasTooLargeFile) {
+    statusEl.textContent = "Lỗi: Dung lượng của mỗi file không được vượt quá 10MB.";
+    return;
+  }
+
+  const totalSize = files.reduce((sum, f) => sum + f.size, 0);
+  const maxTotalSize = 15 * 1024 * 1024; // 15MB
+  if (totalSize > maxTotalSize) {
+    statusEl.textContent = `Lỗi: Tổng dung lượng các file (${humanSize(totalSize)}) vượt quá giới hạn 15MB.`;
+    return;
+  }
+
   statusEl.textContent = `${files.length} file đã sẵn sàng để OCR.`;
 
   files.forEach((file) => {
@@ -107,6 +132,11 @@ function renderFileCards(files) {
       iframe.src = url;
       iframe.title = file.name;
       preview.appendChild(iframe);
+    } else if (file.name.toLowerCase().endsWith(".docx")) {
+      const placeholder = document.createElement("div");
+      placeholder.className = "placeholder";
+      placeholder.textContent = "Không hỗ trợ xem trước file Word. Bấm Run OCR để trích xuất text.";
+      preview.appendChild(placeholder);
     } else {
       const placeholder = document.createElement("div");
       placeholder.className = "placeholder";
@@ -145,6 +175,7 @@ function renderResults(payload) {
 
   let hasRenderedContent = false;
   const textChunks = [];
+  const importTypeLabel = payload?.import_type_label || getImportTypeLabel(payload?.import_type);
 
   results.forEach((fileResult) => {
     const item = document.createElement("article");
@@ -197,7 +228,7 @@ function renderResults(payload) {
     resultsEl.appendChild(item);
   });
 
-  resultMetaEl.textContent = `${results.length} file(s) processed.`;
+  resultMetaEl.textContent = `${results.length} file(s) processed · ${importTypeLabel}`;
   lastOcrPayload = payload;
   lastOcrText = textChunks.join("\n\n---\n\n");
   lastDownloadName = `ocr-result-${new Date().toISOString().replace(/[:.]/g, "-")}.txt`;
@@ -225,6 +256,9 @@ fileInput.addEventListener("change", () => {
 
 clearBtn.addEventListener("click", () => {
   fileInput.value = "";
+  if (importTypeSelect) {
+    importTypeSelect.value = "clear";
+  }
   clearPreviews();
   resultsEl.className = "results empty";
   resultsEl.textContent = "Chọn file rồi bấm Run OCR để xem text ở đây.";
@@ -237,6 +271,9 @@ clearBtn.addEventListener("click", () => {
   showExcelOptions(false);
   if (useLlmCheckbox) {
     useLlmCheckbox.checked = false;
+  }
+  if (layoutPreserveCheckbox) {
+    layoutPreserveCheckbox.checked = true;
   }
 });
 
@@ -311,13 +348,37 @@ form.addEventListener("submit", async (event) => {
     return;
   }
 
+  if (files.length > 10) {
+    statusEl.textContent = "Chỉ được phép chọn tối đa 10 file mỗi lượt.";
+    return;
+  }
+
+  const maxSingleSize = 10 * 1024 * 1024; // 10MB
+  const hasTooLargeFile = files.some(file => file.size > maxSingleSize);
+  if (hasTooLargeFile) {
+    statusEl.textContent = "Mỗi file tải lên không được vượt quá 10MB.";
+    return;
+  }
+
+  const totalSize = files.reduce((sum, f) => sum + f.size, 0);
+  const maxTotalSize = 15 * 1024 * 1024; // 15MB
+  if (totalSize > maxTotalSize) {
+    statusEl.textContent = `Tổng dung lượng file (${humanSize(totalSize)}) vượt quá giới hạn 15MB.`;
+    return;
+  }
+
   const formData = new FormData();
   files.forEach((file) => formData.append("files", file));
+  formData.append("import_type", importTypeSelect?.value || "clear");
+  formData.append("layout_preserve", layoutPreserveCheckbox?.checked ? "true" : "false");
 
   submitBtn.disabled = true;
   clearBtn.disabled = true;
   downloadBtn.disabled = true;
-  statusEl.textContent = "Đang OCR... vui lòng chờ.";
+  const selectedImportType = importTypeSelect?.value || "clear";
+  statusEl.textContent = selectedImportType === "complex"
+    ? "Đang OCR chế độ phức tạp... vui lòng chờ."
+    : "Đang OCR chế độ rõ ràng... vui lòng chờ.";
 
   try {
     const response = await fetch("/ocr", {
@@ -343,7 +404,7 @@ form.addEventListener("submit", async (event) => {
 
     renderResults(payload);
     showExcelOptions(false);
-    statusEl.textContent = "OCR xong.";
+    statusEl.textContent = `OCR xong ở chế độ ${getImportTypeLabel(payload?.import_type)}.`;
   } catch (error) {
     resultsEl.className = "results empty";
     resultsEl.textContent = error?.message || "Unknown error.";

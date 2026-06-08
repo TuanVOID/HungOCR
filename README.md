@@ -160,6 +160,12 @@ For local usage, please refer to the following documentation based on your needs
 - **PP-StructureV3**: See [PP-StructureV3 Documentation](https://www.paddleocr.ai/latest/en/version3.x/pipeline_usage/PP-StructureV3.html)
 - **More Capabilities**: See [More Capabilities Documentation](https://www.paddleocr.ai/latest/en/version3.x/pipeline_usage/pipeline_overview.html)
 
+### Step 3: Local Run for This App
+This repo's web UI is served by the Flask backend, so there is no separate frontend server.
+
+- Start backend only: `python run.py be`
+- Start backend and open the web UI: `python run.py full`
+
 
 ## 🧩 More Features
 

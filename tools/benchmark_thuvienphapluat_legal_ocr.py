@@ -40,6 +40,8 @@ DEFAULT_LISTING_URL = "https://thuvienphapluat.vn/page/van-ban-tphcm.aspx"
 DEFAULT_SERVER_URL = "http://127.0.0.1:5000"
 DEFAULT_MAX_IMAGES = 10
 DEFAULT_CANDIDATE_DOCS = 20
+DEFAULT_LEGAL_OUTPUT_ROOT = ROOT_DIR / "benchmark" / "thuvienphapluat_legal_ocr_runs"
+DEFAULT_LEGAL_10DOCS_OUTPUT_ROOT = ROOT_DIR / "benchmark" / "thuvienphapluat_legal_ocr_10docs_runs"
 DEFAULT_PAGE_WIDTH = 1700
 DEFAULT_PAGE_HEIGHT = 2200
 DEFAULT_MARGIN_X = 90
@@ -157,7 +159,40 @@ def normalize_whitespace(text: str) -> str:
 
 
 def normalize_for_scoring(text: str) -> str:
-    return normalize_whitespace(text)
+    text = normalize_whitespace(text)
+    if not text:
+        return ""
+    text = text.lower()
+    text = text.replace("–", "-").replace("—", "-").replace("−", "-")
+    text = re.sub(r"\s*([/.,;:()\[\]{}\-])\s*", r"\1", text)
+    text = re.sub(r"\s+", " ", text, flags=re.UNICODE).strip()
+    return text
+
+
+def load_document_urls(document_urls_file: str | Path) -> list[str]:
+    path = Path(document_urls_file)
+    payload = json.loads(path.read_text(encoding="utf-8"))
+
+    if isinstance(payload, list):
+        items = payload
+    elif isinstance(payload, dict):
+        items = payload.get("documents") or payload.get("document_urls") or []
+    else:
+        raise ValueError(f"Unsupported document URL file format: {path}")
+
+    urls: list[str] = []
+    for item in items:
+        if isinstance(item, str):
+            url = item
+        elif isinstance(item, dict):
+            url = item.get("url") or item.get("document_url") or ""
+        else:
+            continue
+        url = normalize_whitespace(str(url))
+        if url:
+            urls.append(url)
+
+    return urls
 
 
 def slugify(text: str, fallback: str = "document") -> str:
@@ -318,6 +353,7 @@ def build_page_samples(
     documents: Sequence[DocumentSource],
     output_dir: Path,
     max_images: int,
+    max_pages_per_document: int | None,
     page_width: int,
     page_height: int,
     margin_x: int,
@@ -342,6 +378,8 @@ def build_page_samples(
             line_spacing=line_spacing,
         )
         for page_index, page_lines in enumerate(pages, start=1):
+            if max_pages_per_document is not None and page_index > max_pages_per_document:
+                break
             if len(samples) >= max_images:
                 return samples
 
@@ -457,7 +495,7 @@ def write_report(output_dir: Path, samples: Sequence[PageSample]) -> Path:
         "## Metric",
         "",
         "Accuracy = `1 - Levenshtein(normalized_source, normalized_ocr) / max(len(source), len(ocr), 1)`.",
-        "Whitespace is collapsed and Unicode is normalized with NFKC before scoring.",
+        "Whitespace is collapsed, Unicode is normalized with NFKC, text is lowercased, and spaces around common punctuation are normalized before scoring.",
         "",
         "## Samples",
         "",
@@ -479,8 +517,10 @@ def write_report(output_dir: Path, samples: Sequence[PageSample]) -> Path:
 def run_benchmark(
     server_url: str = DEFAULT_SERVER_URL,
     listing_url: str = DEFAULT_LISTING_URL,
+    document_urls: Sequence[str] | None = None,
     max_images: int = DEFAULT_MAX_IMAGES,
     candidate_docs: int = DEFAULT_CANDIDATE_DOCS,
+    max_pages_per_document: int | None = None,
     output_dir: str | Path | None = None,
     page_width: int = DEFAULT_PAGE_WIDTH,
     page_height: int = DEFAULT_PAGE_HEIGHT,
@@ -495,14 +535,22 @@ def run_benchmark(
 
     if output_dir is None:
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        output_root = ROOT_DIR / "benchmark" / "thuvienphapluat_legal_ocr_runs" / timestamp
+        benchmark_root = (
+            DEFAULT_LEGAL_10DOCS_OUTPUT_ROOT
+            if document_urls is not None
+            else DEFAULT_LEGAL_OUTPUT_ROOT
+        )
+        output_root = benchmark_root / timestamp
     else:
         output_root = Path(output_dir)
     output_root.mkdir(parents=True, exist_ok=True)
 
-    doc_urls = fetch_listing_urls(session, listing_url, candidate_docs)
+    if document_urls is not None:
+        doc_urls = [normalize_whitespace(url) for url in document_urls if normalize_whitespace(url)]
+    else:
+        doc_urls = fetch_listing_urls(session, listing_url, candidate_docs)
     if not doc_urls:
-        raise RuntimeError(f"No document URLs found at {listing_url}")
+        raise RuntimeError("No document URLs were provided for the benchmark.")
 
     documents: list[DocumentSource] = []
     for doc_url in doc_urls:
@@ -518,6 +566,7 @@ def run_benchmark(
         documents=documents,
         output_dir=output_root,
         max_images=max_images,
+        max_pages_per_document=max_pages_per_document,
         page_width=page_width,
         page_height=page_height,
         margin_x=margin_x,

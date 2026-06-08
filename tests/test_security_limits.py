@@ -6,7 +6,8 @@ import os
 # Add root folder to sys.path so we can import app
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app import split_text_into_chunks, check_file_signature, normalize_cell_value, process_docx_text, trim_text_for_llm, get_int_env, preflight_input_file
+from app import split_text_into_chunks, check_file_signature, normalize_cell_value, process_docx_text, trim_text_for_llm, get_int_env, preflight_input_file, build_ocr_spellcheck_prompt, call_ollama_ocr_spellcheck, apply_ocr_spellcheck, apply_ocr_corrections, normalize_import_type, OCR_IMPORT_TYPES
+from tools.benchmark_thuvienphapluat_legal_ocr import normalize_for_scoring
 
 class TestSecurityLimits(unittest.TestCase):
     
@@ -60,7 +61,7 @@ class TestSecurityLimits(unittest.TestCase):
             with self.assertRaises(ValueError) as context:
                 preflight_input_file("sample.png", "sample.png")
 
-        self.assertIn("Ảnh", str(context.exception))
+        self.assertIn("áº¢nh", str(context.exception))
             
     def test_normalize_cell_value_formula_injection(self):
         # Safe string
@@ -93,19 +94,19 @@ class TestSecurityLimits(unittest.TestCase):
     def test_process_docx_text(self):
         import docx
         doc = docx.Document()
-        doc.add_paragraph("Đây là đoạn văn bản test Word.")
+        doc.add_paragraph("ÄÃ¢y lÃ  Ä‘oáº¡n vÄƒn báº£n test Word.")
         table = doc.add_table(rows=1, cols=2)
         row = table.rows[0]
-        row.cells[0].text = "Cột 1"
-        row.cells[1].text = "Cột 2"
+        row.cells[0].text = "Cá»™t 1"
+        row.cells[1].text = "Cá»™t 2"
         
         test_path = "test_temp_docx.docx"
         doc.save(test_path)
         
         try:
             extracted_text = process_docx_text(test_path)
-            self.assertIn("Đây là đoạn văn bản test Word.", extracted_text)
-            self.assertIn("Cột 1 | Cột 2", extracted_text)
+            self.assertIn("ÄÃ¢y lÃ  Ä‘oáº¡n vÄƒn báº£n test Word.", extracted_text)
+            self.assertIn("Cá»™t 1 | Cá»™t 2", extracted_text)
         finally:
             if os.path.exists(test_path):
                 os.remove(test_path)
@@ -121,7 +122,7 @@ class TestSecurityLimits(unittest.TestCase):
         try:
             with self.assertRaises(ValueError) as context:
                 process_docx_text(test_path)
-            self.assertIn("vượt quá giới hạn ký tự", str(context.exception))
+            self.assertIn("vÆ°á»£t quÃ¡ giá»›i háº¡n kÃ½ tá»±", str(context.exception))
         finally:
             if os.path.exists(test_path):
                 os.remove(test_path)
@@ -134,19 +135,19 @@ class TestSecurityLimits(unittest.TestCase):
         # Configure mock return values
         mock_call.side_effect = [
             {
-                "title": "Hóa đơn mua hàng",
-                "headers": ["Tên sản phẩm", "Số lượng", "Đơn giá"],
+                "title": "HÃ³a Ä‘Æ¡n mua hÃ ng",
+                "headers": ["TÃªn sáº£n pháº©m", "Sá»‘ lÆ°á»£ng", "ÄÆ¡n giÃ¡"],
                 "rows": [
-                    {"Tên sản phẩm": "Bút bi", "Số lượng": "10", "Đơn giá": "5000"},
-                    {"Tên sản phẩm": "Sổ tay", "Số lượng": "2", "Đơn giá": "25000"}
+                    {"TÃªn sáº£n pháº©m": "BÃºt bi", "Sá»‘ lÆ°á»£ng": "10", "ÄÆ¡n giÃ¡": "5000"},
+                    {"TÃªn sáº£n pháº©m": "Sá»• tay", "Sá»‘ lÆ°á»£ng": "2", "ÄÆ¡n giÃ¡": "25000"}
                 ]
             },
             {
-                "title": "Thông tin nhân sự",
-                "headers": ["Trường thông tin", "Giá trị"],
+                "title": "ThÃ´ng tin nhÃ¢n sá»±",
+                "headers": ["TrÆ°á»ng thÃ´ng tin", "GiÃ¡ trá»‹"],
                 "rows": [
-                    {"Trường thông tin": "Họ và tên", "Giá trị": "Nguyễn Văn A"},
-                    {"Trường thông tin": "Chức vụ", "Giá trị": "Nhân viên"}
+                    {"TrÆ°á»ng thÃ´ng tin": "Há» vÃ  tÃªn", "GiÃ¡ trá»‹": "Nguyá»…n VÄƒn A"},
+                    {"TrÆ°á»ng thÃ´ng tin": "Chá»©c vá»¥", "GiÃ¡ trá»‹": "NhÃ¢n viÃªn"}
                 ]
             }
         ]
@@ -168,20 +169,20 @@ class TestSecurityLimits(unittest.TestCase):
         build_llm_structured_sheet(wb, mock_results)
         
         # Verify sheets were created successfully
-        self.assertIn("Hóa đơn mua hàng", wb.sheetnames)
-        self.assertIn("Thông tin nhân sự", wb.sheetnames)
+        self.assertIn("HÃ³a Ä‘Æ¡n mua hÃ ng", wb.sheetnames)
+        self.assertIn("ThÃ´ng tin nhÃ¢n sá»±", wb.sheetnames)
         
-        # Verify content of "Hóa đơn mua hàng"
-        sheet1 = wb["Hóa đơn mua hàng"]
-        # Row 1 headers: File, Page, Tên sản phẩm, Số lượng, Đơn giá
-        self.assertEqual([c.value for c in sheet1[1]], ["File", "Page", "Tên sản phẩm", "Số lượng", "Đơn giá"])
-        # Row 2 data: document.pdf, 1, Bút bi, 10, 5000
-        self.assertEqual([c.value for c in sheet1[2]], ["document.pdf", 1, "Bút bi", "10", "5000"])
+        # Verify content of "HÃ³a Ä‘Æ¡n mua hÃ ng"
+        sheet1 = wb["HÃ³a Ä‘Æ¡n mua hÃ ng"]
+        # Row 1 headers: File, Page, TÃªn sáº£n pháº©m, Sá»‘ lÆ°á»£ng, ÄÆ¡n giÃ¡
+        self.assertEqual([c.value for c in sheet1[1]], ["File", "Page", "TÃªn sáº£n pháº©m", "Sá»‘ lÆ°á»£ng", "ÄÆ¡n giÃ¡"])
+        # Row 2 data: document.pdf, 1, BÃºt bi, 10, 5000
+        self.assertEqual([c.value for c in sheet1[2]], ["document.pdf", 1, "BÃºt bi", "10", "5000"])
         
-        # Verify content of "Thông tin nhân sự"
-        sheet2 = wb["Thông tin nhân sự"]
-        self.assertEqual([c.value for c in sheet2[1]], ["File", "Page", "Trường thông tin", "Giá trị"])
-        self.assertEqual([c.value for c in sheet2[2]], ["document.pdf", 2, "Họ và tên", "Nguyễn Văn A"])
+        # Verify content of "ThÃ´ng tin nhÃ¢n sá»±"
+        sheet2 = wb["ThÃ´ng tin nhÃ¢n sá»±"]
+        self.assertEqual([c.value for c in sheet2[1]], ["File", "Page", "TrÆ°á»ng thÃ´ng tin", "GiÃ¡ trá»‹"])
+        self.assertEqual([c.value for c in sheet2[2]], ["document.pdf", 2, "Há» vÃ  tÃªn", "Nguyá»…n VÄƒn A"])
 
     @unittest.mock.patch('app.requests.post')
     def test_call_ollama_structured_table_payload_limits(self, mock_post):
@@ -190,16 +191,16 @@ class TestSecurityLimits(unittest.TestCase):
         mock_response = unittest.mock.Mock()
         mock_response.json.return_value = {
             "message": {
-                "content": '{"title":"Bảng","headers":["Cột 1"],"rows":[{"Cột 1":"Giá trị"}],"notes":""}'
+                "content": '{"title":"Báº£ng","headers":["Cá»™t 1"],"rows":[{"Cá»™t 1":"GiÃ¡ trá»‹"}],"notes":""}'
             }
         }
         mock_response.raise_for_status.return_value = None
         mock_post.return_value = mock_response
 
         long_text = "X" * 7000
-        result = call_ollama_structured_table("sample.pdf", 1, long_text)
+        result = call_ollama_structured_table("sample.pdf", long_text)
 
-        self.assertEqual(result["title"], "Bảng")
+        self.assertEqual(result["title"], "Báº£ng")
         _, kwargs = mock_post.call_args
         payload = kwargs["json"]
         self.assertIn("think", payload)
@@ -209,6 +210,128 @@ class TestSecurityLimits(unittest.TestCase):
         user_message = payload["messages"][1]["content"]
         self.assertIn("X" * 6000, user_message)
         self.assertNotIn("X" * 6001, user_message)
+
+    def test_spellcheck_prompt_structure(self):
+        prompt = build_ocr_spellcheck_prompt("Xin chao")
+        self.assertIn("<task>", prompt)
+        self.assertIn("Return only exact typo corrections. Do not rewrite text.", prompt)
+        self.assertIn("wrong must be copied exactly from the input text.", prompt)
+        self.assertIn("Do not include any pair where wrong and correct are identical.", prompt)
+        self.assertIn("<input_text><![CDATA[", prompt)
+        self.assertIn("Xin chao", prompt)
+        self.assertNotIn("clean_text", prompt)
+
+    @unittest.mock.patch('app.requests.post')
+    def test_call_ollama_ocr_spellcheck_payload(self, mock_post):
+        mock_response = unittest.mock.Mock()
+        mock_response.json.return_value = {
+            "response": '{"corrections":[{"wrong":"Xin chao","correct":"Xin chÃ o"}]}'
+        }
+        mock_response.raise_for_status.return_value = None
+        mock_post.return_value = mock_response
+
+        result = call_ollama_ocr_spellcheck("Xin chao")
+        self.assertEqual(result["corrections"], [{"wrong": "Xin chao", "correct": "Xin chÃ o"}])
+
+        _, kwargs = mock_post.call_args
+        self.assertTrue(kwargs["json"]["stream"] is False)
+        self.assertFalse(kwargs["json"]["think"])
+        self.assertEqual(kwargs["json"]["options"]["temperature"], 0.1)
+        self.assertIn("Return only exact typo corrections. Do not rewrite text.", kwargs["json"]["prompt"])
+        self.assertIn("Do not include any pair where wrong and correct are identical.", kwargs["json"]["prompt"])
+        self.assertEqual(kwargs["json"]["format"]["required"], ["corrections"])
+        self.assertNotIn("clean_text", kwargs["json"]["prompt"])
+
+    @unittest.mock.patch('app.requests.post')
+    def test_call_ollama_ocr_spellcheck_retries_once_on_invalid_json(self, mock_post):
+        first_response = unittest.mock.Mock()
+        first_response.json.return_value = {"response": "not valid json"}
+        first_response.raise_for_status.return_value = None
+
+        second_response = unittest.mock.Mock()
+        second_response.json.return_value = {
+            "response": '{"corrections":[{"wrong":"Xin chao","correct":"Xin chÃ o"}]}'
+        }
+        second_response.raise_for_status.return_value = None
+
+        mock_post.side_effect = [first_response, second_response]
+
+        result = call_ollama_ocr_spellcheck("Xin chao")
+
+        self.assertEqual(result["corrections"], [{"wrong": "Xin chao", "correct": "Xin chÃ o"}])
+        self.assertEqual(mock_post.call_count, 2)
+
+    @unittest.mock.patch('app.call_ollama_ocr_spellcheck')
+    def test_apply_ocr_spellcheck_chunks_large_text(self, mock_call):
+        def _side_effect(chunk, chunk_index=None, chunk_total=None):
+            self.assertLessEqual(len(chunk), 6000)
+            return {
+                "corrections": [],
+            }
+
+        mock_call.side_effect = _side_effect
+
+        text = "A" * 20000
+        result = apply_ocr_spellcheck(text, source_name="sample.pdf", page_number=1)
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["text"], text)
+        self.assertEqual(mock_call.call_count, 4)
+        self.assertEqual([len(call.args[0]) for call in mock_call.call_args_list], [6000, 6000, 6000, 2000])
+
+    @unittest.mock.patch('app.call_ollama_ocr_spellcheck')
+    def test_apply_ocr_spellcheck_applies_corrections_only(self, mock_call):
+        mock_call.return_value = {
+            "corrections": [
+                {"wrong": "Xin chao", "correct": "Xin chÃ o"},
+                {"wrong": "hop dong", "correct": "há»£p Ä‘á»“ng"},
+            ]
+        }
+
+        result = apply_ocr_spellcheck("Xin chao ve hop dong nay.", source_name="sample.pdf", page_number=1)
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["text"], "Xin chÃ o ve há»£p Ä‘á»“ng nay.")
+        self.assertEqual(
+            result["corrections"],
+            [
+                {"wrong": "Xin chao", "correct": "Xin chÃ o", "replaced_count": 1},
+                {"wrong": "hop dong", "correct": "há»£p Ä‘á»“ng", "replaced_count": 1},
+            ],
+        )
+
+    def test_apply_ocr_corrections_filters_broad_and_suspicious(self):
+        text = "Xin chao ve hop dong nay. 2026 va https://example.com"
+        updated_text, applied = apply_ocr_corrections(
+            text,
+            [
+                {"wrong": "Xin chao", "correct": "Xin chÃ o"},
+                {"wrong": "hop dong", "correct": "há»£p Ä‘á»“ng"},
+                {"wrong": "2026", "correct": "2025"},
+                {"wrong": "https://example.com", "correct": "https://example.org"},
+                {"wrong": "Äá»˜C Láº¬P Tá»° DO - Háº NH PHÃšC", "correct": "Äá»™c láº­p - Tá»± do - Háº¡nh phÃºc"},
+            ],
+        )
+
+        self.assertEqual(updated_text, "Xin chÃ o ve há»£p Ä‘á»“ng nay. 2026 va https://example.com")
+        self.assertEqual(
+            applied,
+            [
+                {"wrong": "Xin chao", "correct": "Xin chÃ o", "replaced_count": 1},
+                {"wrong": "hop dong", "correct": "há»£p Ä‘á»“ng", "replaced_count": 1},
+            ],
+        )
+
+    def test_relaxed_scoring_normalizes_case_and_punctuation(self):
+        left = "Äá»˜C Láº¬P Tá»° DO - Háº NH PHÃšC"
+        right = "Äá»™c láº­p tá»± do- háº¡nh phÃºc"
+        self.assertEqual(normalize_for_scoring(left), normalize_for_scoring(right))
+
+    def test_import_type_aliases_fold_complex_into_clear(self):
+        self.assertEqual(normalize_import_type("complex"), "clear")
+        self.assertEqual(normalize_import_type("clear"), "clear")
+        self.assertIn("complex_llm", OCR_IMPORT_TYPES)
+        self.assertTrue(OCR_IMPORT_TYPES["complex_llm"]["llm_postprocess"])
 
 if __name__ == '__main__':
     unittest.main()

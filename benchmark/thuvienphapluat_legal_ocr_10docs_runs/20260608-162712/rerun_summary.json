@@ -1,0 +1,15 @@
+{
+  "timestamp": "20260608-162712",
+  "test_file": "C:\\Indti\\project-ocr\\PaddleOCR\\tests\\test_files\\thuvienphapluat_legal_10docs_20260608-162712.json",
+  "run_dir": "C:\\Indti\\project-ocr\\PaddleOCR\\benchmark\\thuvienphapluat_legal_ocr_10docs_runs\\20260608-162712",
+  "source_mismatches": [],
+  "base_weighted_accuracy": 0.8206046141607001,
+  "base_mean_accuracy": 0.8260004950449724,
+  "llm_weighted_accuracy": 0.8262065765049058,
+  "llm_mean_accuracy": 0.8319559808584419,
+  "status_counts": {
+    "failed": 1,
+    "success": 9
+  },
+  "errors": []
+}

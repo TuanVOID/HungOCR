@@ -1,5 +1,6 @@
 import os
 import json
+import math
 import re
 import sys
 import tempfile
@@ -11,6 +12,7 @@ from io import BytesIO
 from dotenv import load_dotenv
 load_dotenv() # Load environmental variables from .env
 
+import cv2
 import numpy as np
 from PIL import Image
 from flask import Flask, request, jsonify, render_template, send_file
@@ -36,7 +38,7 @@ STORAGE_OUTPUT_ROOT = os.path.join(STORAGE_ROOT, "output")
 
 @app.errorhandler(413)
 def request_entity_too_large(error):
-    return jsonify({"error": "Tổng dung lượng file gửi lên vượt quá giới hạn (tối đa 15MB)."}), 413
+    return jsonify({"error": "TÃ¡Â»â€¢ng dung lÃ†Â°Ã¡Â»Â£ng file gÃ¡Â»Â­i lÃƒÂªn vÃ†Â°Ã¡Â»Â£t quÃƒÂ¡ giÃ¡Â»â€ºi hÃ¡ÂºÂ¡n (tÃ¡Â»â€˜i Ã„â€˜a 15MB)."}), 413
 
 def get_int_env(name, default):
     raw_value = os.getenv(name, str(default))
@@ -46,17 +48,44 @@ def get_int_env(name, default):
         return default
 
 
+def get_float_env(name, default):
+    raw_value = os.getenv(name, str(default))
+    try:
+        return float(raw_value)
+    except (TypeError, ValueError):
+        return default
+
+
+def get_bool_env(name, default=False):
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+    return str(raw_value).strip().lower() in {"1", "true", "yes", "on"}
+
+
 STORAGE_RETENTION_DAYS = get_int_env("STORAGE_RETENTION_DAYS", 7)
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://192.168.0.6:11434").rstrip("/")
 CLASSIFIER_MODEL = os.getenv("CLASSIFIER_MODEL", "qwen3.5:4B")
+OCR_LLM_MODEL = os.getenv("OCR_LLM_MODEL", "qwen3.5:9b-q4_K_M")
+OCR_LLM_TEMPERATURE = get_float_env("OCR_LLM_TEMPERATURE", 0.1)
+OCR_LLM_TIMEOUT_SECONDS = get_int_env("OCR_LLM_TIMEOUT_SECONDS", 180)
 LLM_CHUNK_MAX_CHARS = get_int_env("LLM_CHUNK_MAX_CHARS", 6000)
 LLM_INPUT_MAX_CHARS = get_int_env("LLM_INPUT_MAX_CHARS", 6000)
 LLM_OUTPUT_MAX_TOKENS = get_int_env("LLM_OUTPUT_MAX_TOKENS", 6000)
+SUMMARY_LLM_MODEL = os.getenv("SUMMARY_LLM_MODEL", CLASSIFIER_MODEL)
+SUMMARY_LLM_TEMPERATURE = get_float_env("SUMMARY_LLM_TEMPERATURE", 0.1)
+SUMMARY_LLM_TIMEOUT_SECONDS = get_int_env("SUMMARY_LLM_TIMEOUT_SECONDS", OCR_LLM_TIMEOUT_SECONDS)
+SUMMARY_LLM_CHUNK_MAX_CHARS = get_int_env("SUMMARY_LLM_CHUNK_MAX_CHARS", 6000)
+SUMMARY_LLM_INPUT_MAX_CHARS = get_int_env("SUMMARY_LLM_INPUT_MAX_CHARS", 6000)
+SUMMARY_LLM_OUTPUT_MAX_TOKENS = get_int_env("SUMMARY_LLM_OUTPUT_MAX_TOKENS", 1200)
 MAX_UPLOAD_FILE_SIZE_BYTES = get_int_env("MAX_UPLOAD_FILE_SIZE_BYTES", 10 * 1024 * 1024)
 MAX_PDF_PAGES = get_int_env("MAX_PDF_PAGES", 20)
 MAX_IMAGE_PIXELS = get_int_env("MAX_IMAGE_PIXELS", 20_000_000)
 MAX_IMAGE_EDGE = get_int_env("MAX_IMAGE_EDGE", 12000)
 MAX_DOCX_TEXT_CHARS = get_int_env("MAX_DOCX_TEXT_CHARS", 30000)
+MAX_CORRECTION_WORDS = get_int_env("MAX_CORRECTION_WORDS", 4)
+MAX_CORRECTION_CHARS = get_int_env("MAX_CORRECTION_CHARS", 35)
+OCR_REMOVE_STAMPS = get_bool_env("OCR_REMOVE_STAMPS", True)
 
 # Global model placeholders
 detectors = {}
@@ -65,18 +94,26 @@ local_weights = 'C:/Indti/project-gitclone/deepdoc_vietocr/vietocr/weight/vgg_se
 
 OCR_IMPORT_TYPES = {
     "clear": {
-        "label": "Rõ ràng (nhanh)",
+        "label": "RÃƒÂµ rÃƒÂ ng (nhanh)",
         "det_db_score_mode": "fast",
+        "llm_postprocess": False,
     },
-    "complex": {
-        "label": "Phức tạp (chậm)",
+    "complex_llm": {
+        "label": "PhÃ¡Â»Â©c tÃ¡ÂºÂ¡p + LLM (chÃ¡ÂºÂ­m nhÃ¡ÂºÂ¥t)",
         "det_db_score_mode": "slow",
+        "llm_postprocess": True,
     },
 }
 
 
+
+OCR_IMPORT_TYPE_ALIASES = {
+    "complex": "clear",
+}
+
 def normalize_import_type(raw_value):
     value = str(raw_value or "clear").strip().lower()
+    value = OCR_IMPORT_TYPE_ALIASES.get(value, value)
     if value not in OCR_IMPORT_TYPES:
         return "clear"
     return value
@@ -106,7 +143,7 @@ def build_storage_paths(raw_filename):
     }
 
 
-def build_ocr_output_payload(filename, import_type, layout_preserve, pages_text, saved_at, status="success", message=""):
+def build_ocr_output_payload(filename, import_type, layout_preserve, pages_text, saved_at, status="success", message="", llm_postprocess=False):
     full_text = "\n\n".join(
         str(page.get("text", "")).strip()
         for page in pages_text
@@ -119,6 +156,7 @@ def build_ocr_output_payload(filename, import_type, layout_preserve, pages_text,
         "message": message,
         "import_type": import_type,
         "layout_preserve": layout_preserve,
+        "llm_postprocess": llm_postprocess,
         "pages": pages_text,
         "text": full_text,
     }
@@ -234,6 +272,129 @@ def crop_box(image, box, padding=3):
         return image.crop((left, top, right, bottom))
     except Exception:
         return None
+
+
+def merge_overlapping_regions(regions, max_gap=12):
+    pending = [tuple(region) for region in regions if region]
+    merged = []
+
+    while pending:
+        current = list(pending.pop(0))
+        changed = True
+        while changed:
+            changed = False
+            survivors = []
+            for other in pending:
+                overlaps = not (
+                    other[0] > current[2] + max_gap
+                    or other[2] < current[0] - max_gap
+                    or other[1] > current[3] + max_gap
+                    or other[3] < current[1] - max_gap
+                )
+                if overlaps:
+                    current[0] = min(current[0], other[0])
+                    current[1] = min(current[1], other[1])
+                    current[2] = max(current[2], other[2])
+                    current[3] = max(current[3], other[3])
+                    changed = True
+                else:
+                    survivors.append(other)
+            pending = survivors
+        merged.append(tuple(current))
+
+    return merged
+
+
+def detect_stamp_regions(pil_img):
+    rgb = np.array(pil_img.convert("RGB"))
+    gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
+    _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+
+    image_height, image_width = gray.shape
+    kernel_size = max(5, int(round(min(image_width, image_height) * 0.004)))
+    if kernel_size % 2 == 0:
+        kernel_size += 1
+
+    close_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (kernel_size, kernel_size))
+    closed = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, close_kernel, iterations=1)
+    contours, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    candidate_regions = []
+    for contour in contours:
+        area = cv2.contourArea(contour)
+        if area <= 0:
+            continue
+
+        x, y, width, height = cv2.boundingRect(contour)
+        if width < max(60, int(image_width * 0.05)) or height < max(45, int(image_height * 0.025)):
+            continue
+
+        relative_area = area / float(image_width * image_height)
+        if relative_area < 0.001 or relative_area > 0.06:
+            continue
+
+        aspect_ratio = width / float(height)
+        if aspect_ratio < 0.6 or aspect_ratio > 4.5:
+            continue
+
+        perimeter = cv2.arcLength(contour, True)
+        if perimeter <= 0:
+            continue
+
+        approx = cv2.approxPolyDP(contour, 0.03 * perimeter, True)
+        circularity = 4 * math.pi * area / (perimeter * perimeter)
+        bbox_fill_ratio = area / float(width * height)
+
+        roi = binary[y : y + height, x : x + width]
+        ring_thickness = max(2, min(width, height) // 18)
+        border_mask = np.zeros((height, width), dtype=np.uint8)
+        cv2.rectangle(border_mask, (0, 0), (width - 1, height - 1), 255, ring_thickness)
+        border_density = float((roi[border_mask > 0] > 0).mean())
+
+        inner = roi[
+            ring_thickness : max(ring_thickness + 1, height - ring_thickness),
+            ring_thickness : max(ring_thickness + 1, width - ring_thickness),
+        ]
+        inner_density = float((inner > 0).mean()) if inner.size else 0.0
+
+        rect_like = (
+            4 <= len(approx) <= 10
+            and bbox_fill_ratio >= 0.45
+            and border_density >= 0.25
+        )
+        circle_like = (
+            0.55 <= circularity <= 1.3
+            and 0.7 <= aspect_ratio <= 1.35
+            and border_density >= 0.15
+            and inner_density >= 0.08
+        )
+
+        if not (rect_like or circle_like):
+            continue
+
+        padding = max(8, int(min(width, height) * 0.08))
+        candidate_regions.append(
+            (
+                max(0, x - padding),
+                max(0, y - padding),
+                min(image_width, x + width + padding),
+                min(image_height, y + height + padding),
+            )
+        )
+
+    return merge_overlapping_regions(candidate_regions)
+
+
+def remove_stamp_regions(pil_img):
+    regions = detect_stamp_regions(pil_img)
+    if not regions:
+        return pil_img, []
+
+    masked = np.array(pil_img.convert("RGB"))
+    for left, top, right, bottom in regions:
+        masked[top:bottom, left:right] = 255
+
+    return Image.fromarray(masked), regions
 
 def sort_lines(lines_data, y_tolerance=12.0):
     if not lines_data:
@@ -444,7 +605,7 @@ def preflight_input_file(temp_path, filename):
             num_pages = len(pdf_doc)
             if num_pages > MAX_PDF_PAGES:
                 raise ValueError(
-                    f"Tài liệu PDF vượt quá giới hạn số trang cho phép (tối đa {MAX_PDF_PAGES} trang, file này có {num_pages} trang)."
+                    f"TÃƒÂ i liÃ¡Â»â€¡u PDF vÃ†Â°Ã¡Â»Â£t quÃƒÂ¡ giÃ¡Â»â€ºi hÃ¡ÂºÂ¡n sÃ¡Â»â€˜ trang cho phÃƒÂ©p (tÃ¡Â»â€˜i Ã„â€˜a {MAX_PDF_PAGES} trang, file nÃƒÂ y cÃƒÂ³ {num_pages} trang)."
                 )
         finally:
             try:
@@ -459,15 +620,15 @@ def preflight_input_file(temp_path, filename):
         with Image.open(temp_path) as img:
             width, height = img.size
             if width <= 0 or height <= 0:
-                raise ValueError("Ảnh đầu vào không hợp lệ.")
+                raise ValueError("Ã¡ÂºÂ¢nh Ã„â€˜Ã¡ÂºÂ§u vÃƒÂ o khÃƒÂ´ng hÃ¡Â»Â£p lÃ¡Â»â€¡.")
             pixel_count = width * height
             if pixel_count > MAX_IMAGE_PIXELS:
                 raise ValueError(
-                    f"Ảnh vượt quá giới hạn độ phân giải cho phép (tối đa {MAX_IMAGE_PIXELS:,} pixel, ảnh này có {pixel_count:,} pixel)."
+                    f"Ã¡ÂºÂ¢nh vÃ†Â°Ã¡Â»Â£t quÃƒÂ¡ giÃ¡Â»â€ºi hÃ¡ÂºÂ¡n Ã„â€˜Ã¡Â»â„¢ phÃƒÂ¢n giÃ¡ÂºÂ£i cho phÃƒÂ©p (tÃ¡Â»â€˜i Ã„â€˜a {MAX_IMAGE_PIXELS:,} pixel, Ã¡ÂºÂ£nh nÃƒÂ y cÃƒÂ³ {pixel_count:,} pixel)."
                 )
             if max(width, height) > MAX_IMAGE_EDGE:
                 raise ValueError(
-                    f"Ảnh vượt quá giới hạn kích thước cạnh cho phép (tối đa {MAX_IMAGE_EDGE} px mỗi cạnh, ảnh này là {width}x{height} px)."
+                    f"Ã¡ÂºÂ¢nh vÃ†Â°Ã¡Â»Â£t quÃƒÂ¡ giÃ¡Â»â€ºi hÃ¡ÂºÂ¡n kÃƒÂ­ch thÃ†Â°Ã¡Â»â€ºc cÃ¡ÂºÂ¡nh cho phÃƒÂ©p (tÃ¡Â»â€˜i Ã„â€˜a {MAX_IMAGE_EDGE} px mÃ¡Â»â€”i cÃ¡ÂºÂ¡nh, Ã¡ÂºÂ£nh nÃƒÂ y lÃƒÂ  {width}x{height} px)."
                 )
 
 
@@ -589,6 +750,25 @@ def trim_text_for_llm(text, max_chars=LLM_INPUT_MAX_CHARS):
     return text[:max_chars].rstrip()
 
 
+def split_text_for_llm_chunks(text, max_chars=LLM_CHUNK_MAX_CHARS):
+    text = text or ""
+    if not text.strip():
+        return []
+
+    max_chars = max(1, int(max_chars or 1))
+    return [text[i:i + max_chars] for i in range(0, len(text), max_chars)]
+
+
+def build_combined_file_text(pages):
+    combined_texts = []
+    for page in pages if isinstance(pages, list) else []:
+        page_number = page.get("page_number", 1)
+        page_text = str(page.get("text", "")).strip()
+        if page_text:
+            combined_texts.append(f"--- TRANG {page_number} ---\n{page_text}")
+    return "\n\n".join(combined_texts).strip()
+
+
 def extract_json_object(text):
     if not text:
         return None
@@ -611,6 +791,422 @@ def extract_json_object(text):
     return None
 
 
+OCR_SPELLCHECK_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "corrections": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "wrong": {"type": "string"},
+                    "correct": {"type": "string"},
+                },
+                "required": ["wrong", "correct"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["corrections"],
+    "additionalProperties": False,
+}
+
+
+SUMMARY_RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "summary": {"type": "string"},
+    },
+    "required": ["summary"],
+    "additionalProperties": False,
+}
+
+
+def build_ocr_spellcheck_prompt(page_text, chunk_index=None, chunk_total=None):
+    page_text = trim_text_for_llm(page_text, LLM_INPUT_MAX_CHARS)
+    chunk_header = ""
+    if chunk_index is not None and chunk_total is not None:
+        chunk_header = f"  <chunk>{chunk_index}/{chunk_total}</chunk>\n"
+    return f"""
+<task>
+  <role>You are correcting OCR output from Vietnamese legal/administrative documents.</role>
+  <objective>Return only exact typo corrections. Do not rewrite text.</objective>
+{chunk_header}  <rules>
+    <rule>Only return high-confidence OCR typo corrections.</rule>
+    <rule>Do not rewrite sentences, paragraphs, or formatting.</rule>
+    <rule>Do not translate, summarize, paraphrase, normalize legal meaning, or improve wording.</rule>
+    <rule>Do not add, remove, reorder, or invent words.</rule>
+    <rule>Each correction must contain only two short fields: wrong and correct.</rule>
+    <rule>wrong must be copied exactly from the input text.</rule>
+    <rule>correct must be the minimal corrected word or short fragment.</rule>
+    <rule>Do not include any pair where wrong and correct are identical.</rule>
+    <rule>Do not return full passages, explanations, or reasons.</rule>
+    <rule>Return valid JSON only in the shape {{"corrections":[{{"wrong":"...","correct":"..."}}]}}.</rule>
+    <rule>If there are no corrections, return {{"corrections":[]}}.</rule>
+  </rules>
+  <input_text><![CDATA[
+{page_text}
+  ]]></input_text>
+</task>
+""".strip()
+
+
+def build_summary_prompt(document_name, source_text, round_number=1, chunk_index=None, chunk_total=None):
+    source_text = trim_text_for_llm(source_text, SUMMARY_LLM_INPUT_MAX_CHARS)
+    chunk_header = ""
+    if chunk_index is not None and chunk_total is not None:
+        chunk_header = f"  <chunk>{chunk_index}/{chunk_total}</chunk>\n"
+    return f"""
+<task>
+  <role>You summarize OCR text extracted from Vietnamese legal and administrative documents for Excel review.</role>
+  <objective>Return one concise Vietnamese summary that stays faithful to the OCR text.</objective>
+  <round>{round_number}</round>
+{chunk_header}  <rules>
+    <rule>Write in Vietnamese.</rule>
+    <rule>Do not invent facts, dates, document numbers, agencies, or conclusions that are not present in the OCR text.</rule>
+    <rule>Focus on the document type, issuing authority, document number/date, main topic, and key instructions when present.</rule>
+    <rule>If the OCR text is noisy or incomplete, mention that the summary is based on OCR text and may be incomplete.</rule>
+    <rule>Keep the summary concise and useful for a spreadsheet cell.</rule>
+    <rule>Return valid JSON only in the shape {{"summary":"..."}}.</rule>
+  </rules>
+  <document_name>{document_name or "document"}</document_name>
+  <input_text><![CDATA[
+{source_text}
+  ]]></input_text>
+</task>
+""".strip()
+
+
+def call_ollama_ocr_spellcheck(page_text, chunk_index=None, chunk_total=None):
+    prompt = build_ocr_spellcheck_prompt(page_text, chunk_index=chunk_index, chunk_total=chunk_total)
+    last_error = None
+
+    for attempt in range(2):
+        try:
+            response = requests.post(
+                f"{OLLAMA_BASE_URL}/api/generate",
+                json={
+                    "model": OCR_LLM_MODEL,
+                    "stream": False,
+                    "format": OCR_SPELLCHECK_SCHEMA,
+                    "think": False,
+                    "options": {
+                        "temperature": OCR_LLM_TEMPERATURE,
+                        "num_predict": LLM_OUTPUT_MAX_TOKENS,
+                    },
+                    "prompt": prompt,
+                },
+                timeout=(10, OCR_LLM_TIMEOUT_SECONDS),
+            )
+            response.raise_for_status()
+            payload = response.json()
+            content = payload.get("response", "")
+            parsed = extract_json_object(content)
+            if not isinstance(parsed, dict):
+                raise ValueError("Ollama response did not contain valid JSON.")
+            corrections = parsed.get("corrections")
+            if corrections is None:
+                raise ValueError("Ollama response did not contain corrections.")
+            if not isinstance(corrections, list):
+                raise ValueError("Ollama corrections must be a list.")
+            return parsed
+        except (requests.RequestException, ValueError) as exc:
+            last_error = exc
+            if attempt == 0:
+                continue
+            raise
+
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError("Unexpected Ollama spellcheck failure.")
+
+
+def call_ollama_summary(document_name, source_text, round_number=1, chunk_index=None, chunk_total=None):
+    prompt = build_summary_prompt(
+        document_name,
+        source_text,
+        round_number=round_number,
+        chunk_index=chunk_index,
+        chunk_total=chunk_total,
+    )
+    last_error = None
+
+    for attempt in range(2):
+        try:
+            response = requests.post(
+                f"{OLLAMA_BASE_URL}/api/generate",
+                json={
+                    "model": SUMMARY_LLM_MODEL,
+                    "stream": False,
+                    "format": SUMMARY_RESPONSE_SCHEMA,
+                    "think": False,
+                    "options": {
+                        "temperature": SUMMARY_LLM_TEMPERATURE,
+                        "num_predict": SUMMARY_LLM_OUTPUT_MAX_TOKENS,
+                    },
+                    "prompt": prompt,
+                },
+                timeout=(10, SUMMARY_LLM_TIMEOUT_SECONDS),
+            )
+            response.raise_for_status()
+            payload = response.json()
+            content = payload.get("response", "")
+            parsed = extract_json_object(content)
+            if not isinstance(parsed, dict):
+                raise ValueError("Ollama summary response did not contain valid JSON.")
+            summary_text = normalize_cell_value(parsed.get("summary", "")).strip()
+            if not summary_text:
+                raise ValueError("Ollama summary response did not contain summary text.")
+            return {
+                "summary": summary_text,
+            }
+        except (requests.RequestException, ValueError) as exc:
+            last_error = exc
+            if attempt == 0:
+                continue
+            raise
+
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError("Unexpected Ollama summary failure.")
+
+
+def apply_ocr_corrections(page_text, corrections):
+    text = page_text or ""
+    if not isinstance(corrections, list) or not corrections:
+        return text, []
+
+    url_like_pattern = re.compile(r"(?i)\b(?:https?://|www\.)\S+")
+    year_like_pattern = re.compile(r"\b(?:19|20)\d{2}\b")
+    date_like_pattern = re.compile(r"\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b")
+
+    normalized_corrections = []
+    seen_pairs = set()
+    for item in corrections:
+        if not isinstance(item, dict):
+            continue
+        wrong = str(item.get("wrong") or "").strip()
+        correct = str(item.get("correct") or "").strip()
+        if not wrong or not correct or wrong == correct:
+            continue
+        if "\n" in wrong or "\n" in correct or "\r" in wrong or "\r" in correct:
+            continue
+        if len(wrong) > MAX_CORRECTION_CHARS or len(correct) > MAX_CORRECTION_CHARS:
+            continue
+        if len(wrong.split()) > MAX_CORRECTION_WORDS or len(correct.split()) > MAX_CORRECTION_WORDS:
+            continue
+        if url_like_pattern.search(wrong) or url_like_pattern.search(correct):
+            continue
+        if year_like_pattern.search(wrong) or year_like_pattern.search(correct):
+            continue
+        if date_like_pattern.search(wrong) or date_like_pattern.search(correct):
+            continue
+        pair = (wrong, correct)
+        if pair in seen_pairs:
+            continue
+        seen_pairs.add(pair)
+        normalized_corrections.append(pair)
+
+    normalized_corrections.sort(key=lambda pair: len(pair[0]), reverse=True)
+
+    applied = []
+    updated_text = text
+    for wrong, correct in normalized_corrections:
+        if wrong not in updated_text:
+            continue
+        if re.search(r"\w", wrong):
+            pattern = rf"(?<!\w){re.escape(wrong)}(?!\w)"
+            updated_text, replaced = re.subn(pattern, correct, updated_text)
+        else:
+            updated_text, replaced = re.subn(re.escape(wrong), correct, updated_text)
+        if replaced:
+            applied.append({
+                "wrong": wrong,
+                "correct": correct,
+                "replaced_count": replaced,
+            })
+
+    return updated_text, applied
+
+
+def apply_ocr_spellcheck(page_text, source_name="", page_number=None):
+    if not str(page_text or "").strip():
+        return {
+            "text": page_text,
+            "status": "skipped",
+            "corrections": [],
+        }
+
+    chunks = split_text_for_llm_chunks(page_text, LLM_INPUT_MAX_CHARS)
+    if not chunks:
+        return {
+            "text": page_text,
+            "status": "skipped",
+            "corrections": [],
+        }
+
+    corrected_chunks = []
+    all_corrections = []
+    failed_chunks = []
+
+    for index, chunk in enumerate(chunks, start=1):
+        try:
+            llm_result = call_ollama_ocr_spellcheck(chunk, chunk_index=index, chunk_total=len(chunks))
+            corrections = llm_result.get("corrections", [])
+            corrected_chunk, applied_corrections = apply_ocr_corrections(chunk, corrections)
+            corrected_chunks.append(corrected_chunk)
+            all_corrections.extend(applied_corrections)
+        except Exception as exc:
+            location = source_name or "document"
+            if page_number is not None:
+                location = f"{location} page {page_number}"
+            print(f"Warning: could not apply LLM spellcheck for {location} chunk {index}/{len(chunks)}: {exc}")
+            corrected_chunks.append(chunk)
+            failed_chunks.append(index)
+
+    if len(failed_chunks) == len(chunks):
+        return {
+            "text": page_text,
+            "status": "failed",
+            "corrections": [],
+            "failed_chunks": failed_chunks,
+        }
+
+    status = "success" if not failed_chunks else "partial"
+    return {
+        "text": "".join(corrected_chunks),
+        "status": status,
+        "corrections": all_corrections,
+        "failed_chunks": failed_chunks,
+    }
+
+
+def pack_summary_inputs(summary_texts, max_chars):
+    packed_inputs = []
+    current_parts = []
+    current_length = 0
+    separator = "\n\n"
+
+    for summary_text in summary_texts:
+        cleaned_text = normalize_cell_value(summary_text).strip()
+        if not cleaned_text:
+            continue
+
+        part_length = len(cleaned_text) + (len(separator) if current_parts else 0)
+        if current_parts and current_length + part_length > max_chars:
+            packed_inputs.append(separator.join(current_parts))
+            current_parts = [cleaned_text]
+            current_length = len(cleaned_text)
+        else:
+            current_parts.append(cleaned_text)
+            current_length += part_length
+
+    if current_parts:
+        packed_inputs.append(separator.join(current_parts))
+
+    return packed_inputs
+
+
+def summarize_document_text(document_text, document_name=""):
+    clean_text = str(document_text or "").strip()
+    if not clean_text:
+        return {
+            "status": "skipped",
+            "summary": "",
+            "detail": "Không có văn bản để tóm tắt.",
+        }
+
+    effective_chunk_limit = max(1, min(SUMMARY_LLM_CHUNK_MAX_CHARS, SUMMARY_LLM_INPUT_MAX_CHARS))
+    current_inputs = split_text_into_chunks(clean_text, effective_chunk_limit)
+    if not current_inputs:
+        return {
+            "status": "skipped",
+            "summary": "",
+            "detail": "Không có văn bản để tóm tắt.",
+        }
+
+    original_chunk_count = len(current_inputs)
+    round_number = 0
+    failed_calls = 0
+    used_forced_grouping = False
+
+    while current_inputs:
+        round_number += 1
+        summaries = []
+
+        for index, chunk_text in enumerate(current_inputs, start=1):
+            try:
+                llm_result = call_ollama_summary(
+                    document_name=document_name,
+                    source_text=chunk_text,
+                    round_number=round_number,
+                    chunk_index=index,
+                    chunk_total=len(current_inputs),
+                )
+                summaries.append(llm_result["summary"])
+            except Exception as exc:
+                failed_calls += 1
+                print(
+                    f"Warning: could not summarize {document_name or 'document'} "
+                    f"round {round_number} chunk {index}/{len(current_inputs)}: {exc}"
+                )
+                fallback_excerpt = trim_text_for_llm(
+                    chunk_text,
+                    max_chars=min(max(300, SUMMARY_LLM_INPUT_MAX_CHARS // 2), SUMMARY_LLM_INPUT_MAX_CHARS),
+                )
+                if fallback_excerpt:
+                    summaries.append(
+                        "Tóm tắt tạm dựa trên OCR chưa xử lý hết: "
+                        f"{fallback_excerpt}"
+                    )
+
+        summaries = [normalize_cell_value(item).strip() for item in summaries if normalize_cell_value(item).strip()]
+        if not summaries:
+            return {
+                "status": "failed",
+                "summary": "",
+                "detail": "LLM không trả về tóm tắt hợp lệ.",
+            }
+
+        if len(summaries) == 1:
+            detail_parts = [
+                f"{original_chunk_count} phần gốc",
+                f"{round_number} vòng tóm tắt",
+            ]
+            if failed_calls:
+                detail_parts.append(f"{failed_calls} lần gọi LLM lỗi")
+            if used_forced_grouping:
+                detail_parts.append("có gom nhóm bổ sung cho tài liệu dài")
+            return {
+                "status": "partial" if failed_calls else "success",
+                "summary": summaries[0],
+                "detail": ", ".join(detail_parts),
+            }
+
+        next_inputs = pack_summary_inputs(summaries, effective_chunk_limit)
+        if len(next_inputs) >= len(summaries):
+            used_forced_grouping = True
+            next_inputs = []
+            for offset in range(0, len(summaries), 2):
+                grouped_text = "\n\n".join(summaries[offset:offset + 2]).strip()
+                if grouped_text:
+                    next_inputs.append(trim_text_for_llm(grouped_text, SUMMARY_LLM_INPUT_MAX_CHARS))
+
+        current_inputs = [item for item in next_inputs if str(item or "").strip()]
+        if round_number >= 6 and len(current_inputs) > 1:
+            return {
+                "status": "partial" if failed_calls else "failed",
+                "summary": current_inputs[0] if current_inputs else "",
+                "detail": "Vượt quá số vòng tóm tắt tối đa.",
+            }
+
+    return {
+        "status": "failed",
+        "summary": "",
+        "detail": "Không tạo được tóm tắt.",
+    }
+
+
 def call_ollama_structured_table(file_name, page_text):
     page_text = trim_text_for_llm(page_text, LLM_INPUT_MAX_CHARS)
     prompt = f"""
@@ -622,21 +1218,21 @@ Structuring Rules:
 1. **Analyze and Detect Logical Tables**:
    - Carefully analyze the document content. A single document may contain multiple logical tables.
    - For example, an invoice typically has:
-     - A "Thông tin chung" (General Info) table containing metadata like Invoice No, Date, Buyer, Seller, Payment Method, Total Amount. This should be structured as a 2-column key-value table: ["Trường thông tin / Attribute", "Giá trị / Value"].
-     - A "Chi tiết hàng hóa" (Line Items) table containing a grid of the goods or services, quantities, prices, etc. This should be structured as a multi-column table (e.g. headers: ["STT", "Tên hàng hóa", "Số lượng", "Đơn giá", "Thành tiền"]).
+     - A "ThÃƒÂ´ng tin chung" (General Info) table containing metadata like Invoice No, Date, Buyer, Seller, Payment Method, Total Amount. This should be structured as a 2-column key-value table: ["TrÃ†Â°Ã¡Â»Âng thÃƒÂ´ng tin / Attribute", "GiÃƒÂ¡ trÃ¡Â»â€¹ / Value"].
+     - A "Chi tiÃ¡ÂºÂ¿t hÃƒÂ ng hÃƒÂ³a" (Line Items) table containing a grid of the goods or services, quantities, prices, etc. This should be structured as a multi-column table (e.g. headers: ["STT", "TÃƒÂªn hÃƒÂ ng hÃƒÂ³a", "SÃ¡Â»â€˜ lÃ†Â°Ã¡Â»Â£ng", "Ã„ÂÃ†Â¡n giÃƒÂ¡", "ThÃƒÂ nh tiÃ¡Â»Ân"]).
    - Extract each table separately. Do NOT force distinct tables or metadata and grids to combine into a single messy sheet.
 
 2. **Clean and Standardize Data**:
-   - For key-value pairs (e.g., "Số hóa đơn: HD-00123"), split them into headers and values. The attribute name should be in the first column, and the value in the second column (do not keep "Số hóa đơn: HD-00123" combined in a single cell).
+   - For key-value pairs (e.g., "SÃ¡Â»â€˜ hÃƒÂ³a Ã„â€˜Ã†Â¡n: HD-00123"), split them into headers and values. The attribute name should be in the first column, and the value in the second column (do not keep "SÃ¡Â»â€˜ hÃƒÂ³a Ã„â€˜Ã†Â¡n: HD-00123" combined in a single cell).
    - Clean up OCR noise (like stray symbols "|", vertical lines, bullet points, leading/trailing colons ":", and extraneous spaces).
-   - Use professional Vietnamese terminology for table names, headers, and values (e.g., "Mã hàng", "Số lượng", "Đơn giá", "Thành tiền", "Ngày lập", "Thông tin chung").
+   - Use professional Vietnamese terminology for table names, headers, and values (e.g., "MÃƒÂ£ hÃƒÂ ng", "SÃ¡Â»â€˜ lÃ†Â°Ã¡Â»Â£ng", "Ã„ÂÃ†Â¡n giÃƒÂ¡", "ThÃƒÂ nh tiÃ¡Â»Ân", "NgÃƒÂ y lÃ¡ÂºÂ­p", "ThÃƒÂ´ng tin chung").
 
 3. **Response Schema**:
    - Return ONLY a JSON object with this exact shape:
      {{
        "tables": [
          {{
-           "name": "Tên bảng ngắn gọn bằng tiếng Việt (ví dụ: Thông tin chung, Danh sách sản phẩm, v.v.)",
+           "name": "TÃƒÂªn bÃ¡ÂºÂ£ng ngÃ¡ÂºÂ¯n gÃ¡Â»Ân bÃ¡ÂºÂ±ng tiÃ¡ÂºÂ¿ng ViÃ¡Â»â€¡t (vÃƒÂ­ dÃ¡Â»Â¥: ThÃƒÂ´ng tin chung, Danh sÃƒÂ¡ch sÃ¡ÂºÂ£n phÃ¡ÂºÂ©m, v.v.)",
            "headers": ["Header 1", "Header 2", ...],
            "rows": [
              {{
@@ -646,7 +1242,7 @@ Structuring Rules:
            ]
          }}
        ],
-       "notes": "Nhận xét ngắn gọn về cấu trúc dữ liệu đã trích xuất"
+       "notes": "NhÃ¡ÂºÂ­n xÃƒÂ©t ngÃ¡ÂºÂ¯n gÃ¡Â»Ân vÃ¡Â»Â cÃ¡ÂºÂ¥u trÃƒÂºc dÃ¡Â»Â¯ liÃ¡Â»â€¡u Ã„â€˜ÃƒÂ£ trÃƒÂ­ch xuÃ¡ÂºÂ¥t"
      }}
    - Each sheet name must be under 25 characters to fit Excel's 31-character limit.
    - Use empty strings for missing values.
@@ -753,7 +1349,7 @@ def style_worksheet_premium(sheet):
     def is_numeric(val_str):
         if not val_str:
             return False
-        cleaned = val_str.strip().replace(",", "").replace(".", "").replace("$", "").replace("%", "").replace("đ", "").replace("VND", "").replace("vnđ", "")
+        cleaned = val_str.strip().replace(",", "").replace(".", "").replace("$", "").replace("%", "").replace("Ã„â€˜", "").replace("VND", "").replace("vnÃ„â€˜", "")
         return cleaned.isdigit()
 
     # 2. Format Data Rows
@@ -773,10 +1369,10 @@ def style_worksheet_premium(sheet):
             header = headers[col_idx - 1] if col_idx - 1 < len(headers) else ""
             
             # Smart alignment
-            is_num_col = any(k in header for k in ["giá", "tiền", "số lượng", "qty", "amount", "total", "price", "thành tiền", "đơn giá", "chi phí", "thuế", "tax", "doanh thu"])
+            is_num_col = any(k in header for k in ["giÃƒÂ¡", "tiÃ¡Â»Ân", "sÃ¡Â»â€˜ lÃ†Â°Ã¡Â»Â£ng", "qty", "amount", "total", "price", "thÃƒÂ nh tiÃ¡Â»Ân", "Ã„â€˜Ã†Â¡n giÃƒÂ¡", "chi phÃƒÂ­", "thuÃ¡ÂºÂ¿", "tax", "doanh thu"])
             is_num_val = is_numeric(val_str)
             
-            is_center_col = any(k in header for k in ["page", "trang", "status", "trạng thái", "ngày", "date", "stt", "no."])
+            is_center_col = any(k in header for k in ["page", "trang", "status", "trÃ¡ÂºÂ¡ng thÃƒÂ¡i", "ngÃƒÂ y", "date", "stt", "no."])
             
             if is_num_col or (is_num_val and len(val_str) < 15):
                 cell.alignment = Alignment(horizontal="right", vertical="center")
@@ -819,9 +1415,9 @@ def build_llm_structured_sheet(workbook, response_results):
     def get_target_sheet(title, headers):
         title_str = normalize_cell_value(title).strip()
         if not title_str:
-            title_str = "Dữ liệu phân tích"
+            title_str = "DÃ¡Â»Â¯ liÃ¡Â»â€¡u phÃƒÂ¢n tÃƒÂ­ch"
             
-        base_title = sanitize_sheet_title(title_str, fallback="Dữ liệu phân tích")
+        base_title = sanitize_sheet_title(title_str, fallback="DÃ¡Â»Â¯ liÃ¡Â»â€¡u phÃƒÂ¢n tÃƒÂ­ch")
         
         # Check if we already created a sheet with similar name and matching headers
         for sheet_name in workbook.sheetnames:
@@ -829,16 +1425,16 @@ def build_llm_structured_sheet(workbook, response_results):
                 sheet = workbook[sheet_name]
                 # Check headers matching
                 existing_headers = [c.value for c in sheet[1]]
-                # Exclude 'Tên file'
-                if len(existing_headers) >= 1 and existing_headers[:1] == ["Tên file"]:
+                # Exclude 'TÃƒÂªn file'
+                if len(existing_headers) >= 1 and existing_headers[:1] == ["TÃƒÂªn file"]:
                     existing_headers = existing_headers[1:]
                 if existing_headers == headers:
                     return sheet
                     
         # Otherwise create a new sheet
-        sheet_name = unique_sheet_title(workbook, base_title, fallback="Dữ liệu phân tích")
+        sheet_name = unique_sheet_title(workbook, base_title, fallback="DÃ¡Â»Â¯ liÃ¡Â»â€¡u phÃƒÂ¢n tÃƒÂ­ch")
         sheet = workbook.create_sheet(title=sheet_name)
-        sheet.append(["Tên file"] + headers)
+        sheet.append(["TÃƒÂªn file"] + headers)
         created_sheets.add(sheet)
         return sheet
 
@@ -847,9 +1443,9 @@ def build_llm_structured_sheet(workbook, response_results):
     def get_fallback_sheet():
         nonlocal fallback_sheet
         if fallback_sheet is None:
-            sheet_name = unique_sheet_title(workbook, "Chưa phân loại", fallback="Chưa phân loại")
+            sheet_name = unique_sheet_title(workbook, "ChÃ†Â°a phÃƒÂ¢n loÃ¡ÂºÂ¡i", fallback="ChÃ†Â°a phÃƒÂ¢n loÃ¡ÂºÂ¡i")
             fallback_sheet = workbook.create_sheet(title=sheet_name)
-            fallback_sheet.append(["Tên file", "Trạng thái", "Chi tiết / Văn bản"])
+            fallback_sheet.append(["TÃƒÂªn file", "TrÃ¡ÂºÂ¡ng thÃƒÂ¡i", "Chi tiÃ¡ÂºÂ¿t / VÃ„Æ’n bÃ¡ÂºÂ£n"])
             created_sheets.add(fallback_sheet)
         return fallback_sheet
 
@@ -860,18 +1456,11 @@ def build_llm_structured_sheet(workbook, response_results):
 
         if status != "success" or not isinstance(pages, list) or not pages:
             f_sheet = get_fallback_sheet()
-            f_sheet.append([filename, status or "error", file_result.get("message", "Lỗi xử lý file.")])
+            f_sheet.append([filename, status or "error", file_result.get("message", "LÃ¡Â»â€”i xÃ¡Â»Â­ lÃƒÂ½ file.")])
             continue
 
         # Combine text of all pages in the file
-        combined_texts = []
-        for p in pages:
-            p_num = p.get("page_number", 1)
-            p_txt = str(p.get("text", "")).strip()
-            if p_txt:
-                combined_texts.append(f"--- TRANG {p_num} ---\n{p_txt}")
-
-        full_file_text = "\n\n".join(combined_texts).strip()
+        full_file_text = build_combined_file_text(pages)
         if not full_file_text:
             continue
 
@@ -888,7 +1477,7 @@ def build_llm_structured_sheet(workbook, response_results):
                     tables = []
                     
             for table in tables:
-                title = table.get("name") or table.get("title") or "Dữ liệu phân tích"
+                title = table.get("name") or table.get("title") or "DÃ¡Â»Â¯ liÃ¡Â»â€¡u phÃƒÂ¢n tÃƒÂ­ch"
                 headers = table.get("headers", [])
                 rows = table.get("rows", [])
                 
@@ -923,15 +1512,15 @@ def build_llm_structured_sheet(workbook, response_results):
                 notes.append(f"{filename}: {llm_note}")
                 
         except Exception as exc:
-            notes.append(f"{filename}: Gặp lỗi khi gọi LLM ({exc}).")
+            notes.append(f"{filename}: GÃ¡ÂºÂ·p lÃ¡Â»â€”i khi gÃ¡Â»Âi LLM ({exc}).")
             f_sheet = get_fallback_sheet()
-            f_sheet.append([filename, "error", f"Lỗi gọi LLM: {exc}. Nội dung văn bản xem tại tệp TXT."])
+            f_sheet.append([filename, "error", f"LÃ¡Â»â€”i gÃ¡Â»Âi LLM: {exc}. NÃ¡Â»â„¢i dung vÃ„Æ’n bÃ¡ÂºÂ£n xem tÃ¡ÂºÂ¡i tÃ¡Â»â€¡p TXT."])
 
     # If no sheets were created, create a default empty sheet
     if not created_sheets:
-        empty_sheet = workbook.create_sheet(title="Kết quả trống")
-        empty_sheet.append(["Tên file", "Thông báo"])
-        empty_sheet.append(["", "Không trích xuất được dữ liệu có cấu trúc từ tài liệu."])
+        empty_sheet = workbook.create_sheet(title="KÃ¡ÂºÂ¿t quÃ¡ÂºÂ£ trÃ¡Â»â€˜ng")
+        empty_sheet.append(["TÃƒÂªn file", "ThÃƒÂ´ng bÃƒÂ¡o"])
+        empty_sheet.append(["", "KhÃƒÂ´ng trÃƒÂ­ch xuÃ¡ÂºÂ¥t Ã„â€˜Ã†Â°Ã¡Â»Â£c dÃ¡Â»Â¯ liÃ¡Â»â€¡u cÃƒÂ³ cÃ¡ÂºÂ¥u trÃƒÂºc tÃ¡Â»Â« tÃƒÂ i liÃ¡Â»â€¡u."])
         created_sheets.add(empty_sheet)
 
     # Apply styling & auto-fit columns for all created sheets
@@ -940,7 +1529,7 @@ def build_llm_structured_sheet(workbook, response_results):
 
     if notes:
         notes_sheet = workbook.create_sheet(title=unique_sheet_title(workbook, "LLM Notes"))
-        notes_sheet.append(["Thông tin phản hồi từ LLM"])
+        notes_sheet.append(["ThÃƒÂ´ng tin phÃ¡ÂºÂ£n hÃ¡Â»â€œi tÃ¡Â»Â« LLM"])
         notes_sheet[1][0].font = Font(name="Segoe UI", size=11, bold=True)
         for note in notes:
             notes_sheet.append([note])
@@ -949,7 +1538,41 @@ def build_llm_structured_sheet(workbook, response_results):
     return workbook.worksheets[0]
 
 
-def build_excel_report(response_results, use_llm=False):
+def build_summary_sheet(workbook, response_results):
+    sheet = workbook.create_sheet(title=unique_sheet_title(workbook, "Tóm tắt"))
+    sheet.append(["Tên file", "Trạng thái", "Tóm tắt", "Chi tiết"])
+
+    for file_result in response_results:
+        filename = file_result.get("filename", "")
+        status = file_result.get("status", "")
+        pages = file_result.get("pages", [])
+
+        if status != "success" or not isinstance(pages, list) or not pages:
+            sheet.append([
+                filename,
+                status or "error",
+                "",
+                file_result.get("message", "Lỗi xử lý file."),
+            ])
+            continue
+
+        full_file_text = build_combined_file_text(pages)
+        if not full_file_text:
+            sheet.append([filename, "skipped", "", "Không có văn bản để tóm tắt."])
+            continue
+
+        summary_result = summarize_document_text(full_file_text, document_name=filename)
+        sheet.append([
+            filename,
+            summary_result.get("status", "unknown"),
+            summary_result.get("summary", ""),
+            summary_result.get("detail", ""),
+        ])
+
+    return sheet
+
+
+def build_excel_report(response_results, use_llm=False, include_summary=False):
     workbook = Workbook()
     default_sheet = workbook.active
     workbook.remove(default_sheet)
@@ -959,6 +1582,9 @@ def build_excel_report(response_results, use_llm=False):
         build_raw_ocr_sheet(workbook, response_results)
     else:
         build_standard_ocr_sheet(workbook, response_results)
+
+    if include_summary:
+        build_summary_sheet(workbook, response_results)
 
     # Style all worksheets in the workbook
     for sheet in workbook.worksheets:
@@ -972,7 +1598,11 @@ def build_excel_report(response_results, use_llm=False):
 
 def process_image_ocr(pil_img, import_type="clear", layout_preserve=False):
     detector = get_detector(import_type)
-    img_np = np.array(pil_img)
+    working_img = pil_img.convert("RGB") if pil_img.mode != "RGB" else pil_img
+    if OCR_REMOVE_STAMPS:
+        working_img, _ = remove_stamp_regions(working_img)
+
+    img_np = np.array(working_img)
     results = detector.predict(img_np)
     
     raw_boxes = []
@@ -1004,7 +1634,7 @@ def process_image_ocr(pil_img, import_type="clear", layout_preserve=False):
 
     page_lines = []
     for idx, box in enumerate(raw_boxes):
-        cropped = crop_box(pil_img, box, padding=3)
+        cropped = crop_box(working_img, box, padding=3)
         if cropped is None:
             continue
         try:
@@ -1038,7 +1668,7 @@ def process_docx_text(file_path):
                 text = paragraph.text.strip()
                 total_chars += len(text)
                 if total_chars > max_chars_allowed:
-                    raise ValueError(f"Tài liệu Word vượt quá giới hạn ký tự cho phép (tối đa {max_chars_allowed} ký tự).")
+                    raise ValueError(f"TÃƒÂ i liÃ¡Â»â€¡u Word vÃ†Â°Ã¡Â»Â£t quÃƒÂ¡ giÃ¡Â»â€ºi hÃ¡ÂºÂ¡n kÃƒÂ½ tÃ¡Â»Â± cho phÃƒÂ©p (tÃ¡Â»â€˜i Ã„â€˜a {max_chars_allowed} kÃƒÂ½ tÃ¡Â»Â±).")
                 paragraphs_text.append(text)
         
         # Extract table texts
@@ -1052,14 +1682,14 @@ def process_docx_text(file_path):
                 if row_text:
                     total_chars += len(row_text)
                     if total_chars > max_chars_allowed:
-                        raise ValueError(f"Tài liệu Word vượt quá giới hạn ký tự cho phép (tối đa {max_chars_allowed} ký tự).")
+                        raise ValueError(f"TÃƒÂ i liÃ¡Â»â€¡u Word vÃ†Â°Ã¡Â»Â£t quÃƒÂ¡ giÃ¡Â»â€ºi hÃ¡ÂºÂ¡n kÃƒÂ½ tÃ¡Â»Â± cho phÃƒÂ©p (tÃ¡Â»â€˜i Ã„â€˜a {max_chars_allowed} kÃƒÂ½ tÃ¡Â»Â±).")
                     paragraphs_text.append(row_text)
                     
         return "\n".join(paragraphs_text)
     except ValueError as ve:
         raise ve
     except Exception as e:
-        raise ValueError(f"Không thể đọc file Word: {str(e)}")
+        raise ValueError(f"KhÃƒÂ´ng thÃ¡Â»Æ’ Ã„â€˜Ã¡Â»Âc file Word: {str(e)}")
 
 @app.route('/health', methods=['GET'])
 def health():
@@ -1084,6 +1714,7 @@ def run_ocr():
 
     import_type = normalize_import_type(request.form.get("import_type"))
     import_type_label = OCR_IMPORT_TYPES[import_type]["label"]
+    llm_postprocess = bool(OCR_IMPORT_TYPES[import_type].get("llm_postprocess"))
     layout_preserve = request.form.get("layout_preserve", "false").lower() == "true"
     cleanup_storage_older_than(STORAGE_RETENTION_DAYS)
         
@@ -1100,7 +1731,7 @@ def run_ocr():
             response_results.append({
                 "filename": raw_filename,
                 "status": "error",
-                "message": "Dung lượng file vượt quá giới hạn cho phép (tối đa 10MB mỗi file)."
+                "message": "Dung lÃ†Â°Ã¡Â»Â£ng file vÃ†Â°Ã¡Â»Â£t quÃƒÂ¡ giÃ¡Â»â€ºi hÃ¡ÂºÂ¡n cho phÃƒÂ©p (tÃ¡Â»â€˜i Ã„â€˜a 10MB mÃ¡Â»â€”i file)."
             })
             continue
         
@@ -1110,7 +1741,7 @@ def run_ocr():
             response_results.append({
                 "filename": raw_filename,
                 "status": "error",
-                "message": "Định dạng tệp không được hỗ trợ."
+                "message": "Ã„ÂÃ¡Â»â€¹nh dÃ¡ÂºÂ¡ng tÃ¡Â»â€¡p khÃƒÂ´ng Ã„â€˜Ã†Â°Ã¡Â»Â£c hÃ¡Â»â€” trÃ¡Â»Â£."
             })
             continue
  
@@ -1119,7 +1750,7 @@ def run_ocr():
             response_results.append({
                 "filename": raw_filename,
                 "status": "error",
-                "message": "Nội dung tệp không hợp lệ hoặc đã bị thay đổi phần mở rộng trái phép."
+                "message": "NÃ¡Â»â„¢i dung tÃ¡Â»â€¡p khÃƒÂ´ng hÃ¡Â»Â£p lÃ¡Â»â€¡ hoÃ¡ÂºÂ·c Ã„â€˜ÃƒÂ£ bÃ¡Â»â€¹ thay Ã„â€˜Ã¡Â»â€¢i phÃ¡ÂºÂ§n mÃ¡Â»Å¸ rÃ¡Â»â„¢ng trÃƒÂ¡i phÃƒÂ©p."
             })
             continue
  
@@ -1147,27 +1778,42 @@ def run_ocr():
                 pdf_doc = pdfium.PdfDocument(temp_path)
                 num_pages = len(pdf_doc)
                 if num_pages > 20:
-                    raise ValueError(f"Tài liệu PDF vượt quá giới hạn số trang cho phép (tối đa 20 trang, file này có {num_pages} trang).")
+                    raise ValueError(f"TÃƒÂ i liÃ¡Â»â€¡u PDF vÃ†Â°Ã¡Â»Â£t quÃƒÂ¡ giÃ¡Â»â€ºi hÃ¡ÂºÂ¡n sÃ¡Â»â€˜ trang cho phÃƒÂ©p (tÃ¡Â»â€˜i Ã„â€˜a 20 trang, file nÃƒÂ y cÃƒÂ³ {num_pages} trang).")
                 for i, page in enumerate(pdf_doc):
                     bitmap = page.render(scale=2.0)
                     pil_img = bitmap.to_pil()
                     text = process_image_ocr(pil_img, import_type=import_type, layout_preserve=layout_preserve)
+                    llm_result = apply_ocr_spellcheck(text, source_name=raw_filename, page_number=i + 1) if llm_postprocess else None
                     pages_text.append({
                         "page_number": i + 1,
-                        "text": text
+                        "text": llm_result["text"] if llm_result else text,
+                        **({"raw_text": text} if llm_postprocess else {}),
+                        **({"llm_status": llm_result["status"]} if llm_result else {}),
+                        **({"llm_corrections": llm_result.get("corrections", [])} if llm_result else {}),
+                        **({"llm_error": llm_result.get("error")} if llm_result and llm_result.get("error") else {}),
                     })
             elif filename.lower().endswith(".docx"):
                 text = process_docx_text(temp_path)
+                llm_result = apply_ocr_spellcheck(text, source_name=raw_filename, page_number=1) if llm_postprocess else None
                 pages_text.append({
                     "page_number": 1,
-                    "text": text
+                    "text": llm_result["text"] if llm_result else text,
+                    **({"raw_text": text} if llm_postprocess else {}),
+                    **({"llm_status": llm_result["status"]} if llm_result else {}),
+                    **({"llm_corrections": llm_result.get("corrections", [])} if llm_result else {}),
+                    **({"llm_error": llm_result.get("error")} if llm_result and llm_result.get("error") else {}),
                 })
             else:
                 pil_img = Image.open(temp_path).convert("RGB")
                 text = process_image_ocr(pil_img, import_type=import_type, layout_preserve=layout_preserve)
+                llm_result = apply_ocr_spellcheck(text, source_name=raw_filename, page_number=1) if llm_postprocess else None
                 pages_text.append({
                     "page_number": 1,
-                    "text": text
+                    "text": llm_result["text"] if llm_result else text,
+                    **({"raw_text": text} if llm_postprocess else {}),
+                    **({"llm_status": llm_result["status"]} if llm_result else {}),
+                    **({"llm_corrections": llm_result.get("corrections", [])} if llm_result else {}),
+                    **({"llm_error": llm_result.get("error")} if llm_result and llm_result.get("error") else {}),
                 })
             output_payload = build_ocr_output_payload(
                 filename=filename,
@@ -1175,6 +1821,7 @@ def run_ocr():
                 layout_preserve=layout_preserve,
                 pages_text=pages_text,
                 saved_at=storage_paths["saved_at"],
+                llm_postprocess=llm_postprocess,
             )
             write_ocr_output_json(storage_paths["output_path"], output_payload)
 
@@ -1194,6 +1841,7 @@ def run_ocr():
                     saved_at=storage_paths["saved_at"],
                     status="error",
                     message=str(e),
+                    llm_postprocess=llm_postprocess,
                 )
                 write_ocr_output_json(storage_paths["output_path"], error_payload)
             except Exception as storage_error:
@@ -1222,6 +1870,7 @@ def run_ocr():
         "import_type": import_type,
         "import_type_label": import_type_label,
         "layout_preserve": layout_preserve,
+        "llm_postprocess": llm_postprocess,
         "results": response_results
     })
 
@@ -1231,12 +1880,17 @@ def export_xlsx():
     payload = request.get_json(silent=True) or {}
     results = payload.get("results")
     use_llm = bool(payload.get("use_llm"))
+    include_summary = bool(payload.get("include_summary"))
 
     if not isinstance(results, list):
         return jsonify({"error": "Missing OCR results for Excel export."}), 400
 
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    workbook_bytes = build_excel_report(results, use_llm=use_llm)
+    workbook_bytes = build_excel_report(
+        results,
+        use_llm=use_llm,
+        include_summary=include_summary,
+    )
 
     return send_file(
         workbook_bytes,

@@ -1,0 +1,96 @@
+{
+  "generated_at": "2026-06-08T15:43:54",
+  "checks": [
+    {
+      "sample_id": "01-01",
+      "document_url": "https://thuvienphapluat.vn/van-ban/Tai-chinh-nha-nuoc/Quyet-dinh-32-2026-QD-UBND-huong-dan-noi-dung-chi-Quy-Phong-chong-thien-tai-Ho-Chi-Minh-709374.aspx",
+      "exact_match": true,
+      "normalized_match": true,
+      "artifact_length": 2984,
+      "live_length": 2984,
+      "image_path": "C:\\Users\\admin\\AppData\\Local\\Temp\\tmprtm_8omz\\01-01\\images\\01-01-quyet-inh-32-2026-q-ubnd-huong-dan-noi-dung-chi-quy-phong-chong-thien-tai-ho-chi.png"
+    },
+    {
+      "sample_id": "02-01",
+      "document_url": "https://thuvienphapluat.vn/van-ban/Bo-may-hanh-chinh/Quyet-dinh-3214-QD-UBND-2026-cong-bo-thu-tuc-hanh-chinh-Hoat-dong-khoa-hoc-So-Khoa-hoc-Ho-Chi-Minh-707873.aspx",
+      "exact_match": true,
+      "normalized_match": true,
+      "artifact_length": 3473,
+      "live_length": 3473,
+      "image_path": "C:\\Users\\admin\\AppData\\Local\\Temp\\tmprtm_8omz\\02-01\\images\\01-01-quyet-inh-3214-q-ubnd-2026-cong-bo-thu-tuc-hanh-chinh-hoat-ong-khoa-hoc-so-khoa-.png"
+    },
+    {
+      "sample_id": "03-01",
+      "document_url": "https://thuvienphapluat.vn/van-ban/Bo-may-hanh-chinh/Quyet-dinh-3209-QD-UBND-2026-Quy-trinh-thu-tuc-hanh-chinh-Giao-duc-voi-nuoc-ngoai-So-Giao-duc-Ho-Chi-Minh-707955.aspx",
+      "exact_match": true,
+      "normalized_match": true,
+      "artifact_length": 3366,
+      "live_length": 3366,
+      "image_path": "C:\\Users\\admin\\AppData\\Local\\Temp\\tmprtm_8omz\\03-01\\images\\01-01-quyet-inh-3209-q-ubnd-2026-quy-trinh-thu-tuc-hanh-chinh-giao-duc-voi-nuoc-ngoai-.png"
+    },
+    {
+      "sample_id": "04-01",
+      "document_url": "https://thuvienphapluat.vn/van-ban/Bo-may-hanh-chinh/Quyet-dinh-3207-QD-UBND-2026-Quy-trinh-thu-tuc-hanh-chinh-linh-vuc-Giam-ngheo-So-Nong-nghiep-Ho-Chi-Minh-707956.aspx",
+      "exact_match": true,
+      "normalized_match": true,
+      "artifact_length": 3348,
+      "live_length": 3348,
+      "image_path": "C:\\Users\\admin\\AppData\\Local\\Temp\\tmprtm_8omz\\04-01\\images\\01-01-quyet-inh-3207-q-ubnd-2026-quy-trinh-thu-tuc-hanh-chinh-linh-vuc-giam-ngheo-so-n.png"
+    },
+    {
+      "sample_id": "05-01",
+      "document_url": "https://thuvienphapluat.vn/van-ban/Van-hoa-Xa-hoi/Quyet-dinh-31-2026-QD-UBND-Huong-dan-tieu-chuan-xet-tang-danh-hieu-Gia-dinh-van-hoa-Ho-Chi-Minh-709517.aspx",
+      "exact_match": true,
+      "normalized_match": true,
+      "artifact_length": 3542,
+      "live_length": 3542,
+      "image_path": "C:\\Users\\admin\\AppData\\Local\\Temp\\tmprtm_8omz\\05-01\\images\\01-01-quyet-inh-31-2026-q-ubnd-huong-dan-tieu-chuan-xet-tang-danh-hieu-gia-inh-van-hoa.png"
+    },
+    {
+      "sample_id": "06-01",
+      "document_url": "https://thuvienphapluat.vn/van-ban/Cong-nghe-thong-tin/Quyet-dinh-3181-QD-UBND-2026-cong-bo-thu-tuc-hanh-chinh-Vien-thong-va-Internet-So-Khoa-hoc-Ho-Chi-Minh-707963.aspx",
+      "exact_match": true,
+      "normalized_match": true,
+      "artifact_length": 2887,
+      "live_length": 2887,
+      "image_path": "C:\\Users\\admin\\AppData\\Local\\Temp\\tmprtm_8omz\\06-01\\images\\01-01-quyet-inh-3181-q-ubnd-2026-cong-bo-thu-tuc-hanh-chinh-vien-thong-va-internet-so-.png"
+    },
+    {
+      "sample_id": "07-01",
+      "document_url": "https://thuvienphapluat.vn/van-ban/Bo-may-hanh-chinh/Quyet-dinh-3180-QD-UBND-2026-cong-bo-thu-tuc-hanh-chinh-linh-vuc-Thuy-loi-So-Nong-nghiep-Ho-Chi-Minh-707896.aspx",
+      "exact_match": true,
+      "normalized_match": true,
+      "artifact_length": 3337,
+      "live_length": 3337,
+      "image_path": "C:\\Users\\admin\\AppData\\Local\\Temp\\tmprtm_8omz\\07-01\\images\\01-01-quyet-inh-3180-q-ubnd-2026-cong-bo-thu-tuc-hanh-chinh-linh-vuc-thuy-loi-so-nong-.png"
+    },
+    {
+      "sample_id": "08-01",
+      "document_url": "https://thuvienphapluat.vn/van-ban/Bo-may-hanh-chinh/Quyet-dinh-3182-QD-UBND-2026-cong-bo-thu-tuc-hanh-chinh-Bien-doi-khi-hau-So-Nong-nghiep-Ho-Chi-Minh-707898.aspx",
+      "exact_match": true,
+      "normalized_match": true,
+      "artifact_length": 2890,
+      "live_length": 2890,
+      "image_path": "C:\\Users\\admin\\AppData\\Local\\Temp\\tmprtm_8omz\\08-01\\images\\01-01-quyet-inh-3182-q-ubnd-2026-cong-bo-thu-tuc-hanh-chinh-bien-oi-khi-hau-so-nong-ng.png"
+    },
+    {
+      "sample_id": "09-01",
+      "document_url": "https://thuvienphapluat.vn/van-ban/Bo-may-hanh-chinh/Quyet-dinh-3183-QD-UBND-2026-cong-bo-thu-tuc-hanh-chinh-Tieu-chuan-do-luong-So-Khoa-hoc-Ho-Chi-Minh-707897.aspx",
+      "exact_match": true,
+      "normalized_match": true,
+      "artifact_length": 2902,
+      "live_length": 2902,
+      "image_path": "C:\\Users\\admin\\AppData\\Local\\Temp\\tmprtm_8omz\\09-01\\images\\01-01-quyet-inh-3183-q-ubnd-2026-cong-bo-thu-tuc-hanh-chinh-tieu-chuan-o-luong-so-khoa.png"
+    },
+    {
+      "sample_id": "10-01",
+      "document_url": "https://thuvienphapluat.vn/van-ban/Bo-may-hanh-chinh/Quyet-dinh-3099-QD-UBND-2026-cong-bo-thu-tuc-hanh-chinh-Thuy-san-So-Nong-nghiep-Ho-Chi-Minh-707031.aspx",
+      "exact_match": true,
+      "normalized_match": true,
+      "artifact_length": 2893,
+      "live_length": 2893,
+      "image_path": "C:\\Users\\admin\\AppData\\Local\\Temp\\tmprtm_8omz\\10-01\\images\\01-01-quyet-inh-3099-q-ubnd-2026-cong-bo-thu-tuc-hanh-chinh-thuy-san-so-nong-nghiep-ho.png"
+    }
+  ],
+  "mismatches": []
+}

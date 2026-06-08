@@ -1,0 +1,1253 @@
+{
+  "generated_at": "2026-06-08T15:35:24",
+  "model": "qwen3.5:4B",
+  "temperature": 0.1,
+  "chunk_max_chars": 6000,
+  "input_max_chars": 6000,
+  "output_max_tokens": 6000,
+  "sample_count": 10,
+  "status_counts": {
+    "success": 10
+  },
+  "base_weighted_accuracy": 0.8188171516279678,
+  "llm_weighted_accuracy": 0.8234871493419549,
+  "base_mean_accuracy": 0.8224374733601991,
+  "llm_mean_accuracy": 0.8269501013627408,
+  "results": [
+    {
+      "sample_id": "01-01",
+      "document_title": "Quyết định 32/2026/QĐ-UBND hướng dẫn nội dung chi Quỹ Phòng chống thiên tai Hồ Chí Minh",
+      "base_accuracy": 0.7795791652293894,
+      "llm_accuracy": 0.7802690582959642,
+      "delta_accuracy": 0.0006898930665747427,
+      "base_cer": 0.22042083477061056,
+      "llm_cer": 0.21973094170403587,
+      "base_distance": 639,
+      "llm_distance": 637,
+      "source_length": 2899,
+      "ocr_length": 2384,
+      "llm_length": 2384,
+      "llm_status": "success",
+      "corrections_count": 2,
+      "failed_chunks": [],
+      "corrections": [
+        {
+          "wrong": "PHÒNG, CHÔNG THIÊN TAI",
+          "correct": "PHÒNG, CHỐNG THIÊN TAI",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "QUYẾT DỊNH",
+          "correct": "QUYẾT ĐỊNH",
+          "replaced_count": 1
+        }
+      ]
+    },
+    {
+      "sample_id": "02-01",
+      "document_title": "Quyết định 3214/QĐ-UBND 2026 công bố thủ tục hành chính Hoạt động khoa học Sở Khoa học Hồ Chí Minh",
+      "base_accuracy": 0.8097070139094407,
+      "llm_accuracy": 0.8100029594554602,
+      "delta_accuracy": 0.00029594554601952705,
+      "base_cer": 0.19029298609055934,
+      "llm_cer": 0.1899970405445398,
+      "base_distance": 643,
+      "llm_distance": 642,
+      "source_length": 3379,
+      "ocr_length": 2878,
+      "llm_length": 2878,
+      "llm_status": "success",
+      "corrections_count": 1,
+      "failed_chunks": [],
+      "corrections": [
+        {
+          "wrong": "HÔ CHÍ MINH",
+          "correct": "HỒ CHÍ MINH",
+          "replaced_count": 1
+        }
+      ]
+    },
+    {
+      "sample_id": "03-01",
+      "document_title": "Quyết định 3209/QĐ-UBND 2026 Quy trình thủ tục hành chính Giáo dục với nước ngoài Sở Giáo dục Hồ Chí Minh",
+      "base_accuracy": 0.7779144878498924,
+      "llm_accuracy": 0.7772992925253768,
+      "delta_accuracy": -0.0006151953245155939,
+      "base_cer": 0.22208551215010766,
+      "llm_cer": 0.2227007074746232,
+      "base_distance": 722,
+      "llm_distance": 724,
+      "source_length": 3251,
+      "ocr_length": 2628,
+      "llm_length": 2628,
+      "llm_status": "success",
+      "corrections_count": 1,
+      "failed_chunks": [],
+      "corrections": [
+        {
+          "wrong": "HỒ CHÍ MINH",
+          "correct": "HÔ CHÍ MINH",
+          "replaced_count": 2
+        }
+      ]
+    },
+    {
+      "sample_id": "04-01",
+      "document_title": "Quyết định 3207/QĐ-UBND 2026 Quy trình thủ tục hành chính lĩnh vực Giảm nghèo Sở Nông nghiệp Hồ Chí Minh",
+      "base_accuracy": 0.7794253938832252,
+      "llm_accuracy": 0.7905468025949953,
+      "delta_accuracy": 0.011121408711770142,
+      "base_cer": 0.2205746061167748,
+      "llm_cer": 0.20945319740500462,
+      "base_distance": 714,
+      "llm_distance": 678,
+      "source_length": 3237,
+      "ocr_length": 2614,
+      "llm_length": 2619,
+      "llm_status": "success",
+      "corrections_count": 36,
+      "failed_chunks": [],
+      "corrections": [
+        {
+          "wrong": "môi trường điện tủ",
+          "correct": "môi trường điện tử",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "quy trình mội bộ",
+          "correct": "quy trình nội bộ",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "quy trình nôi bộ",
+          "correct": "quy trình nội bộ",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "văn bản quy đình",
+          "correct": "văn bản quy định",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "bị Thường xuyên",
+          "correct": "Bị Thường xuyên",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "phu thuộc vào",
+          "correct": "phụ thuộc vào",
+          "replaced_count": 2
+        },
+        {
+          "wrong": "3207/QĐ UBND",
+          "correct": "3207/QĐ-UBND",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "GIẢM NGHIOO",
+          "correct": "GIẢM NGHEO",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "tại dịa chỉ",
+          "correct": "tại địa chỉ",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "MÔI TRƯƠNG",
+          "correct": "MÔI TRƯỜNG",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "QUYẾT DỊNH",
+          "correct": "QUYẾT ĐỊNH",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "điều chính",
+          "correct": "điều chỉnh",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "PHẾ DUYẾT",
+          "correct": "PHÊ DUYẾT",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "THÀNH PHÔ",
+          "correct": "THÀNH PHỐ",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "Nghị đình",
+          "correct": "Nghị định",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "Văn phông",
+          "correct": "Văn phòng",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "tiếp nhân",
+          "correct": "tiếp nhận",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "Giảm đốc",
+          "correct": "Giám đốc",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "đăng tái",
+          "correct": "đăng tải",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "theo dòi",
+          "correct": "theo dõi",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "kip thời",
+          "correct": "kịp thời",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "DIỆN TỬ",
+          "correct": "ĐIỆN TỬ",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "thì tục",
+          "correct": "thủ tục",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "pham vi",
+          "correct": "phạm vi",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "điện từ",
+          "correct": "điện tử",
+          "replaced_count": 2
+        },
+        {
+          "wrong": "sia đói",
+          "correct": "sửa đổi",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "điện tỉ",
+          "correct": "điện tử",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "Căn cử",
+          "correct": "Căn cứ",
+          "replaced_count": 2
+        },
+        {
+          "wrong": "bô su",
+          "correct": "bổ sung",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "sửa đ",
+          "correct": "sửa đổi",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "L Só",
+          "correct": "L Sở",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "soái",
+          "correct": "sao",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "lòm",
+          "correct": "lộ",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "mói",
+          "correct": "mới",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "Th",
+          "correct": "Thành",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "ky",
+          "correct": "này",
+          "replaced_count": 1
+        }
+      ]
+    },
+    {
+      "sample_id": "05-01",
+      "document_title": "Quyết định 31/2026/QĐ-UBND Hướng dẫn tiêu chuẩn xét tặng danh hiệu Gia đình văn hóa Hồ Chí Minh",
+      "base_accuracy": 0.7175324675324675,
+      "llm_accuracy": 0.7299291617473436,
+      "delta_accuracy": 0.012396694214876103,
+      "base_cer": 0.2824675324675325,
+      "llm_cer": 0.27007083825265643,
+      "base_distance": 957,
+      "llm_distance": 915,
+      "source_length": 3388,
+      "ocr_length": 2598,
+      "llm_length": 2603,
+      "llm_status": "success",
+      "corrections_count": 37,
+      "failed_chunks": [],
+      "corrections": [
+        {
+          "wrong": "HỒ CHÍ MINII",
+          "correct": "HỒ CHÍ MINH",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "khen thường",
+          "correct": "khen thưởng",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "Quyết dinh",
+          "correct": "Quyết định",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "phân đình",
+          "correct": "phân định",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "văn hoa?",
+          "correct": "văn hóa",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "thị trần",
+          "correct": "thị trấn",
+          "replaced_count": 2
+        },
+        {
+          "wrong": "quy đình",
+          "correct": "quy định",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "Giảm đốc",
+          "correct": "Giám đốc",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "chỉ tiết",
+          "correct": "chi tiết",
+          "replaced_count": 4
+        },
+        {
+          "wrong": "Quy đình",
+          "correct": "Quy định",
+          "replaced_count": 3
+        },
+        {
+          "wrong": "Bình Duy",
+          "correct": "Bình Dương",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "lĩnh vự",
+          "correct": "lĩnh vực",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "thi đia",
+          "correct": "thi đua",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "địa bản",
+          "correct": "địa bàn",
+          "replaced_count": 2
+        },
+        {
+          "wrong": "Căn cử",
+          "correct": "Căn cứ",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "Gia đì",
+          "correct": "Gia đình",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "Hồ Chi",
+          "correct": "Hồ Chí",
+          "replaced_count": 2
+        },
+        {
+          "wrong": "chinh",
+          "correct": "chính",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "tring",
+          "correct": "trình",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "hồ sư",
+          "correct": "hồ sơ",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "chuần",
+          "correct": "chuẩn",
+          "replaced_count": 2
+        },
+        {
+          "wrong": "chiẩn",
+          "correct": "chuẩn",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "biêu",
+          "correct": "biểu",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "hoa?",
+          "correct": "hoa",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "thâm",
+          "correct": "thẩm",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "thần",
+          "correct": "thống",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "tính",
+          "correct": "tỉnh",
+          "replaced_count": 2
+        },
+        {
+          "wrong": "tũng",
+          "correct": "tăng",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "CHI",
+          "correct": "CHỊ",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "KKu",
+          "correct": "Khu",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "phô",
+          "correct": "phố",
+          "replaced_count": 2
+        },
+        {
+          "wrong": "tu",
+          "correct": "tư",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "Vi",
+          "correct": "Vị",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "vă",
+          "correct": "văn",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "Uy",
+          "correct": "Ủy",
+          "replaced_count": 3
+        },
+        {
+          "wrong": "Bả",
+          "correct": "Bà",
+          "replaced_count": 2
+        },
+        {
+          "wrong": "Ri",
+          "correct": "Rịa",
+          "replaced_count": 1
+        }
+      ]
+    },
+    {
+      "sample_id": "06-01",
+      "document_title": "Quyết định 3181/QĐ-UBND 2026 công bố thủ tục hành chính Viễn thông và Internet Sở Khoa học Hồ Chí Minh",
+      "base_accuracy": 0.8864691181720814,
+      "llm_accuracy": 0.8946804712602642,
+      "delta_accuracy": 0.008211353088182771,
+      "base_cer": 0.1135308818279186,
+      "llm_cer": 0.10531952873973581,
+      "base_distance": 318,
+      "llm_distance": 295,
+      "source_length": 2801,
+      "ocr_length": 2598,
+      "llm_length": 2604,
+      "llm_status": "success",
+      "corrections_count": 15,
+      "failed_chunks": [],
+      "corrections": [
+        {
+          "wrong": "PHAM VI CHỨC NĂNG",
+          "correct": "PHẠM VI CHỨC NĂNG",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "sửa đồi, bồ sung",
+          "correct": "sửa đổi, bổ sung",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "thủ tục hành chí",
+          "correct": "thủ tục hành chính",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "PCVRNX, TT NTDI",
+          "correct": "PCV, TT NĐI",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "3181/QD-UBND",
+          "correct": "3181/QĐ-UBND",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "một của, một",
+          "correct": "một cửa, một",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "Bô trưởng",
+          "correct": "Bộ trưởng",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "Chính phả",
+          "correct": "Chính phủ",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "Chính phí",
+          "correct": "Chính phủ",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "CHÍ MINH",
+          "correct": "HỒ CHÍ MINH",
+          "replaced_count": 2
+        },
+        {
+          "wrong": "Thông tr",
+          "correct": "Thông tư",
+          "replaced_count": 2
+        },
+        {
+          "wrong": "tổ chúc",
+          "correct": "tổ chức",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "Căn cử",
+          "correct": "Căn cứ",
+          "replaced_count": 3
+        },
+        {
+          "wrong": "một củ",
+          "correct": "một cửa",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "1",
+          "correct": "1.",
+          "replaced_count": 2
+        }
+      ]
+    },
+    {
+      "sample_id": "07-01",
+      "document_title": "Quyết định 3180/QĐ-UBND 2026 công bố thủ tục hành chính lĩnh vực Thủy lợi Sở Nông nghiệp Hồ Chí Minh",
+      "base_accuracy": 0.8211306765523633,
+      "llm_accuracy": 0.8313253012048193,
+      "delta_accuracy": 0.010194624652456019,
+      "base_cer": 0.1788693234476367,
+      "llm_cer": 0.1686746987951807,
+      "base_distance": 579,
+      "llm_distance": 546,
+      "source_length": 3237,
+      "ocr_length": 2785,
+      "llm_length": 2800,
+      "llm_status": "success",
+      "corrections_count": 42,
+      "failed_chunks": [],
+      "corrections": [
+        {
+          "wrong": "Tờ trình số 15173/TT--SNNMT-VP",
+          "correct": "Tờ trình số 15173/TT-SNNMT-VP",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "PHÒNG, CHÔNG THIÊN TAI",
+          "correct": "PHÒNG, CHỐNG THIÊN TAI",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "PCT Nguyên Manh Cường",
+          "correct": "PCT Nguyên Mạnh Cường",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "ban hành kim theo",
+          "correct": "ban hành kèm theo",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "thủ tục hành chí",
+          "correct": "thủ tục hành chính",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "phòng, chống thi",
+          "correct": "phòng, chống thiên",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "thủ tục hành số",
+          "correct": "thủ tục hành chính",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "022211/11 VICC",
+          "correct": "022211/TT VICC",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "THUỘC PHAM VI",
+          "correct": "THUỘC PHẠM VI",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "các linh vực",
+          "correct": "các lĩnh vực",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "HỒ CHI MINH",
+          "correct": "HỒ CHÍ MINH",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "QUYẾT DỊNH",
+          "correct": "QUYẾT ĐỊNH",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "Môi trưởng",
+          "correct": "Môi trường",
+          "replaced_count": 2
+        },
+        {
+          "wrong": "thứ tr A.3",
+          "correct": "thứ tự A.3",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "Như Diêu 3",
+          "correct": "Như Điều 3",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "Nghị đình",
+          "correct": "Nghị định",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "Nghi định",
+          "correct": "Nghị định",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "Chính phí",
+          "correct": "Chính phủ",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "Thông tr",
+          "correct": "Thông tư",
+          "replaced_count": 2
+        },
+        {
+          "wrong": "Giảm đốc",
+          "correct": "Giám đốc",
+          "replaced_count": 3
+        },
+        {
+          "wrong": "kêm theo",
+          "correct": "kèm theo",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "Danh mọc",
+          "correct": "Danh mục",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "lĩnh vục",
+          "correct": "lĩnh vực",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "Nơi nhân",
+          "correct": "Nơi nhận",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "BỎ SUNG",
+          "correct": "BỎ SÁNG",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "sửa đồi",
+          "correct": "sửa đổi",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "bồ sung",
+          "correct": "bổ sung",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "Điều L.",
+          "correct": "Điều 1.",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "sửa đói",
+          "correct": "sửa đổi",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "hồ sung",
+          "correct": "bổ sung",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "UBND ng",
+          "correct": "UBND số",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "pham vi",
+          "correct": "phạm vi",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "tổ chúc",
+          "correct": "tổ chức",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "cả nhân",
+          "correct": "cán bộ",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "TRƯƠNG",
+          "correct": "TRƯỜNG",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "Căn cử",
+          "correct": "Căn cứ",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "Căn có",
+          "correct": "Căn cứ",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "bãi bó",
+          "correct": "bãi bỏ",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "Uy ban",
+          "correct": "Ủy ban",
+          "replaced_count": 2
+        },
+        {
+          "wrong": "MÔI",
+          "correct": "MÔI TRƯỜNG",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "ky.",
+          "correct": "ngay.",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "củ",
+          "correct": "cửa",
+          "replaced_count": 1
+        }
+      ]
+    },
+    {
+      "sample_id": "08-01",
+      "document_title": "Quyết định 3182/QĐ-UBND 2026 công bố thủ tục hành chính Biến đổi khí hậu Sở Nông nghiệp Hồ Chí Minh",
+      "base_accuracy": 0.8809269162210338,
+      "llm_accuracy": 0.8816399286987522,
+      "delta_accuracy": 0.0007130124777183777,
+      "base_cer": 0.11907308377896614,
+      "llm_cer": 0.11836007130124777,
+      "base_distance": 334,
+      "llm_distance": 332,
+      "source_length": 2805,
+      "ocr_length": 2606,
+      "llm_length": 2606,
+      "llm_status": "success",
+      "corrections_count": 2,
+      "failed_chunks": [],
+      "corrections": [
+        {
+          "wrong": "3182/QD-UBND",
+          "correct": "3182/QĐ-UBND",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "DANH MUC",
+          "correct": "DANH MỤC",
+          "replaced_count": 1
+        }
+      ]
+    },
+    {
+      "sample_id": "09-01",
+      "document_title": "Quyết định 3183/QĐ-UBND 2026 công bố thủ tục hành chính Tiêu chuẩn đo lường Sở Khoa học Hồ Chí Minh",
+      "base_accuracy": 0.8867589634362797,
+      "llm_accuracy": 0.8920837770678026,
+      "delta_accuracy": 0.005324813631522929,
+      "base_cer": 0.11324103656372027,
+      "llm_cer": 0.10791622293219737,
+      "base_distance": 319,
+      "llm_distance": 304,
+      "source_length": 2817,
+      "ocr_length": 2615,
+      "llm_length": 2645,
+      "llm_status": "success",
+      "corrections_count": 35,
+      "failed_chunks": [],
+      "corrections": [
+        {
+          "wrong": "Trung tâm Chuyển đối",
+          "correct": "Trung tâm Chuyển đổi",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "LĨNH VỰC TIÊU CHUẦN",
+          "correct": "LĨNH VỰC TIÊU CHUẨN",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "một của liên thông",
+          "correct": "một cửa liên thông",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "thủ tục hành chí",
+          "correct": "thủ tục hành chính",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "022017/TT - PPCP",
+          "correct": "022017/TT-BTTTT",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "thủ tục hành số",
+          "correct": "thủ tục hành chính",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "032222/TT VI PP",
+          "correct": "032222/TT-BTTTT",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "Nguyên Mạnh Cuy",
+          "correct": "Nguyên Mạnh Cường",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "dần nghiệp vụ",
+          "correct": "định nghiệp vụ",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "trách nhiêm",
+          "correct": "trách nhiệm",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "318300 DBUD",
+          "correct": "3183/QĐ-UBND",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "Quyết đình",
+          "correct": "Quyết định",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "Quyết đính",
+          "correct": "Quyết định",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "Bô trưởng",
+          "correct": "Bộ trưởng",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "Văn phông",
+          "correct": "Văn phòng",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "Chính phả",
+          "correct": "Chính phủ",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "Chính phí",
+          "correct": "Chính phủ",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "PV HCC TP",
+          "correct": "PV HCTP",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "Thông tr",
+          "correct": "Thông tư",
+          "replaced_count": 2
+        },
+        {
+          "wrong": "kêm theo",
+          "correct": "kèm theo",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "lình vực",
+          "correct": "lĩnh vực",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "đăng tái",
+          "correct": "đăng tải",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "thì hành",
+          "correct": "thì có hiệu lực",
+          "replaced_count": 2
+        },
+        {
+          "wrong": "Giảm đốc",
+          "correct": "Giám đốc",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "Chủ tích",
+          "correct": "Chủ tịch",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "sửa đồi",
+          "correct": "sửa đổi",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "bồ sung",
+          "correct": "bổ sung",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "có hiêu",
+          "correct": "có hiệu lực",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "TT NTDI",
+          "correct": "TT NTD",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "KSTT/Tr",
+          "correct": "KSTT/VP",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "Căn cử",
+          "correct": "Căn cứ",
+          "replaced_count": 3
+        },
+        {
+          "wrong": "PCVRNX",
+          "correct": "PCVRRX",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "một c",
+          "correct": "một cửa",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "TP;",
+          "correct": "TP",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "Chi",
+          "correct": "Ủy ban",
+          "replaced_count": 1
+        }
+      ]
+    },
+    {
+      "sample_id": "10-01",
+      "document_title": "Quyết định 3099/QĐ-UBND 2026 công bố thủ tục hành chính Thủy sản Sở Nông nghiệp Hồ Chí Minh",
+      "base_accuracy": 0.8849305308158176,
+      "llm_accuracy": 0.8817242607766298,
+      "delta_accuracy": -0.0032062700391878307,
+      "base_cer": 0.1150694691841824,
+      "llm_cer": 0.11827573922337015,
+      "base_distance": 323,
+      "llm_distance": 332,
+      "source_length": 2807,
+      "ocr_length": 2617,
+      "llm_length": 2653,
+      "llm_status": "success",
+      "corrections_count": 38,
+      "failed_chunks": [],
+      "corrections": [
+        {
+          "wrong": "thi hành Quyết đình",
+          "correct": "thi hành Quyết định",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "thủ tục hành chếnh",
+          "correct": "thủ tục hành chính",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "thủ tục hành chí",
+          "correct": "thủ tục hành chính",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "thủ tục hành số",
+          "correct": "thủ tục hành chính",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "Nguyên Mạnh Cuy",
+          "correct": "Nguyên Mạnh Cường",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "PCVRNX, TT NTDI",
+          "correct": "PC.Ư.Ư. T.Ư.",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "dần nghiệp vụ",
+          "correct": "dân nghiệp vụ",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "TTUB. CT, PCT",
+          "correct": "T.Ư. T.Ư.",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "922017 nd-op",
+          "correct": "922017/NĐ-CP",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "một của, một",
+          "correct": "một cửa, một",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "HÔ CHÍ MINH",
+          "correct": "HỒ CHÍ MINH",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "Quyết đình",
+          "correct": "Quyết định",
+          "replaced_count": 2
+        },
+        {
+          "wrong": "phạm vì ch",
+          "correct": "phạm vi chức năng",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "Bô trưởng",
+          "correct": "Bộ trưởng",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "Văn phông",
+          "correct": "Văn phòng",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "Chính phả",
+          "correct": "Chính phủ",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "Chính phí",
+          "correct": "Chính phủ",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "Thông tr",
+          "correct": "Thông tư",
+          "replaced_count": 2
+        },
+        {
+          "wrong": "Giảm đốc",
+          "correct": "Giám đốc",
+          "replaced_count": 3
+        },
+        {
+          "wrong": "lĩnh vục",
+          "correct": "lĩnh vực",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "thì hành",
+          "correct": "thì có hiệu lực",
+          "replaced_count": 2
+        },
+        {
+          "wrong": "sửa đồi",
+          "correct": "sửa đổi",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "bồ sung",
+          "correct": "bổ sung",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "tô chức",
+          "correct": "tổ chức",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "cả nhân",
+          "correct": "cán bộ",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "Căn cử",
+          "correct": "Căn cứ",
+          "replaced_count": 3
+        },
+        {
+          "wrong": "một củ",
+          "correct": "một cửa",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "1.CCng",
+          "correct": "1. Công",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "Uy ban",
+          "correct": "Ủy ban",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "Diễu",
+          "correct": "Điều",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "Cồng",
+          "correct": "Cổng",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "hiêu",
+          "correct": "hiệu lực",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "kim",
+          "correct": "cấp",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "tái",
+          "correct": "khai",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "NHI",
+          "correct": "NHIỆM",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "Ol",
+          "correct": "danh mục",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "ấn",
+          "correct": "in ấn",
+          "replaced_count": 1
+        },
+        {
+          "wrong": "tí",
+          "correct": "tử",
+          "replaced_count": 1
+        }
+      ]
+    }
+  ]
+}

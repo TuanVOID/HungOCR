@@ -1,0 +1,86 @@
+{
+  "generated_at": "2026-06-08T16:27:12",
+  "checks": [
+    {
+      "sample_id": "01-01",
+      "document_url": "https://thuvienphapluat.vn/van-ban/Tai-chinh-nha-nuoc/Quyet-dinh-32-2026-QD-UBND-huong-dan-noi-dung-chi-Quy-Phong-chong-thien-tai-Ho-Chi-Minh-709374.aspx",
+      "exact_match": true,
+      "normalized_match": true,
+      "artifact_length": 2984,
+      "live_length": 2984
+    },
+    {
+      "sample_id": "02-01",
+      "document_url": "https://thuvienphapluat.vn/van-ban/Bo-may-hanh-chinh/Quyet-dinh-3214-QD-UBND-2026-cong-bo-thu-tuc-hanh-chinh-Hoat-dong-khoa-hoc-So-Khoa-hoc-Ho-Chi-Minh-707873.aspx",
+      "exact_match": true,
+      "normalized_match": true,
+      "artifact_length": 3473,
+      "live_length": 3473
+    },
+    {
+      "sample_id": "03-01",
+      "document_url": "https://thuvienphapluat.vn/van-ban/Bo-may-hanh-chinh/Quyet-dinh-3209-QD-UBND-2026-Quy-trinh-thu-tuc-hanh-chinh-Giao-duc-voi-nuoc-ngoai-So-Giao-duc-Ho-Chi-Minh-707955.aspx",
+      "exact_match": true,
+      "normalized_match": true,
+      "artifact_length": 3366,
+      "live_length": 3366
+    },
+    {
+      "sample_id": "04-01",
+      "document_url": "https://thuvienphapluat.vn/van-ban/Bo-may-hanh-chinh/Quyet-dinh-3207-QD-UBND-2026-Quy-trinh-thu-tuc-hanh-chinh-linh-vuc-Giam-ngheo-So-Nong-nghiep-Ho-Chi-Minh-707956.aspx",
+      "exact_match": true,
+      "normalized_match": true,
+      "artifact_length": 3348,
+      "live_length": 3348
+    },
+    {
+      "sample_id": "05-01",
+      "document_url": "https://thuvienphapluat.vn/van-ban/Van-hoa-Xa-hoi/Quyet-dinh-31-2026-QD-UBND-Huong-dan-tieu-chuan-xet-tang-danh-hieu-Gia-dinh-van-hoa-Ho-Chi-Minh-709517.aspx",
+      "exact_match": true,
+      "normalized_match": true,
+      "artifact_length": 3542,
+      "live_length": 3542
+    },
+    {
+      "sample_id": "06-01",
+      "document_url": "https://thuvienphapluat.vn/van-ban/Cong-nghe-thong-tin/Quyet-dinh-3181-QD-UBND-2026-cong-bo-thu-tuc-hanh-chinh-Vien-thong-va-Internet-So-Khoa-hoc-Ho-Chi-Minh-707963.aspx",
+      "exact_match": true,
+      "normalized_match": true,
+      "artifact_length": 2887,
+      "live_length": 2887
+    },
+    {
+      "sample_id": "07-01",
+      "document_url": "https://thuvienphapluat.vn/van-ban/Bo-may-hanh-chinh/Quyet-dinh-3180-QD-UBND-2026-cong-bo-thu-tuc-hanh-chinh-linh-vuc-Thuy-loi-So-Nong-nghiep-Ho-Chi-Minh-707896.aspx",
+      "exact_match": true,
+      "normalized_match": true,
+      "artifact_length": 3337,
+      "live_length": 3337
+    },
+    {
+      "sample_id": "08-01",
+      "document_url": "https://thuvienphapluat.vn/van-ban/Bo-may-hanh-chinh/Quyet-dinh-3182-QD-UBND-2026-cong-bo-thu-tuc-hanh-chinh-Bien-doi-khi-hau-So-Nong-nghiep-Ho-Chi-Minh-707898.aspx",
+      "exact_match": true,
+      "normalized_match": true,
+      "artifact_length": 2890,
+      "live_length": 2890
+    },
+    {
+      "sample_id": "09-01",
+      "document_url": "https://thuvienphapluat.vn/van-ban/Bo-may-hanh-chinh/Quyet-dinh-3183-QD-UBND-2026-cong-bo-thu-tuc-hanh-chinh-Tieu-chuan-do-luong-So-Khoa-hoc-Ho-Chi-Minh-707897.aspx",
+      "exact_match": true,
+      "normalized_match": true,
+      "artifact_length": 2902,
+      "live_length": 2902
+    },
+    {
+      "sample_id": "10-01",
+      "document_url": "https://thuvienphapluat.vn/van-ban/Bo-may-hanh-chinh/Quyet-dinh-3156-QD-UBND-2026-bai-bo-Chi-thi-10-2013-CT-UBND-Ho-Chi-Minh-707759.aspx",
+      "exact_match": true,
+      "normalized_match": true,
+      "artifact_length": 2452,
+      "live_length": 2452
+    }
+  ],
+  "mismatches": []
+}

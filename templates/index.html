@@ -13,7 +13,7 @@
         <p class="eyebrow">PaddleOCR backend test</p>
         <h1>Upload file, extract text, and inspect the result on screen.</h1>
         <p class="subtext">
-          Chọn ảnh hoặc PDF, gửi lên backend Flask, rồi xem text OCR ngay bên dưới hoặc tải xuống TXT / Excel.
+          Chá»n áº£nh hoáº·c PDF, gá»­i lÃªn backend Flask, rá»“i xem text OCR ngay bÃªn dÆ°á»›i hoáº·c táº£i xuá»‘ng TXT / Excel.
         </p>
       </div>
       <div class="hero-badge">
@@ -27,48 +27,53 @@
         <label class="dropzone" for="files">
           <input id="files" name="files" type="file" multiple accept="image/*,.pdf,.docx" />
           <div class="dropzone-inner">
-            <strong>Kéo thả hoặc bấm để chọn file</strong>
-            <span>Hỗ trợ ảnh, PDF và Word (.docx). Có thể chọn nhiều file một lần.</span>
+            <strong>KÃ©o tháº£ hoáº·c báº¥m Ä‘á»ƒ chá»n file</strong>
+            <span>Há»— trá»£ áº£nh, PDF vÃ  Word (.docx). CÃ³ thá»ƒ chá»n nhiá»u file má»™t láº§n.</span>
           </div>
         </label>
 
         <div id="file-list" class="file-list"></div>
 
         <div class="import-options">
-          <label class="import-label" for="import-type">Loại import</label>
+          <label class="import-label" for="import-type">Loáº¡i import</label>
           <select id="import-type" name="import-type" class="select-control">
-            <option value="clear">Rõ ràng (nhanh)</option>
-            <option value="complex">Phức tạp (chậm)</option>
+            <option value="clear">RÃµ rÃ ng (nhanh)</option>
+            <option value="complex_llm">Phá»©c táº¡p + LLM (cháº­m nháº¥t)</option>
           </select>
-          <p class="import-hint">Chọn trước khi bấm Run OCR. Loại phức tạp sẽ ưu tiên độ kỹ hơn, nhưng chậm hơn.</p>
+          <p class="import-hint">Chon truoc khi bam Run OCR. Bat LLM neu can hau xu ly; con lai dung che do nhanh.</p>
           <label class="export-option" for="layout-preserve" style="margin-top: 8px;">
             <input id="layout-preserve" type="checkbox" checked />
             <span>
-              Giữ nguyên bố cục (TXT)
-              <small>Sử dụng khoảng trắng để sắp xếp các cột và đoạn văn bản tương tự bản gốc.</small>
+              Giá»¯ nguyÃªn bá»‘ cá»¥c (TXT)
+              <small>Sá»­ dá»¥ng khoáº£ng tráº¯ng Ä‘á»ƒ sáº¯p xáº¿p cÃ¡c cá»™t vÃ  Ä‘oáº¡n vÄƒn báº£n tÆ°Æ¡ng tá»± báº£n gá»‘c.</small>
             </span>
           </label>
         </div>
 
-        <!-- Tạm ẩn cấu hình LLM Excel để bật lại sau
         <div id="excel-options" class="excel-options hidden" aria-live="polite">
           <label class="export-option" for="use-llm">
             <input id="use-llm" type="checkbox" />
             <span>
               Dùng LLM khi xuất Excel
-              <small>Tắt để xuất nhanh. Bật để Ollama chuyển OCR text sang cột.</small>
+              <small>Tắt để xuất nhanh. Bật để Ollama chuyển OCR text sang dạng cột và sheet cấu trúc.</small>
             </span>
           </label>
-          <p class="excel-hint">Bấm Download Excel lần nữa sau khi chọn xong.</p>
+          <label class="export-option" for="include-summary">
+            <input id="include-summary" type="checkbox" />
+            <span>
+              Có tóm tắt
+              <small>Nếu bật, hệ thống sẽ gọi LLM để tóm tắt nội dung tài liệu. Tài liệu dài sẽ tự chia nhiều lượt tóm tắt theo giới hạn trong `.env`.</small>
+            </span>
+          </label>
+          <p class="excel-hint">Chọn tùy chọn rồi bấm Download Excel để tải file.</p>
         </div>
-        -->
 
         <div class="actions">
           <button id="submit-btn" type="submit">Run OCR</button>
           <button id="clear-btn" type="button" class="secondary">Clear</button>
           <button id="download-btn" type="button" class="secondary" disabled>Download TXT</button>
           <button id="download-xlsx-btn" type="button" class="secondary" disabled>Download Excel</button>
-          <span id="status" class="status">Chưa chọn file nào.</span>
+          <span id="status" class="status">ChÆ°a chá»n file nÃ o.</span>
         </div>
       </form>
     </section>
@@ -77,10 +82,10 @@
       <div class="result-box">
         <div class="section-head">
           <h2>OCR Text</h2>
-          <span id="result-meta">Chưa có kết quả.</span>
+          <span id="result-meta">ChÆ°a cÃ³ káº¿t quáº£.</span>
         </div>
         <div id="results" class="results empty">
-          Chọn file rồi bấm Run OCR để xem text ở đây.
+          Chá»n file rá»“i báº¥m Run OCR Ä‘á»ƒ xem text á»Ÿ Ä‘Ã¢y.
         </div>
       </div>
     </section>

@@ -7,6 +7,7 @@ const downloadBtn = document.getElementById("download-btn");
 const downloadXlsxBtn = document.getElementById("download-xlsx-btn");
 const importTypeSelect = document.getElementById("import-type");
 const useLlmCheckbox = document.getElementById("use-llm");
+const includeSummaryCheckbox = document.getElementById("include-summary");
 const excelOptionsEl = document.getElementById("excel-options");
 const statusEl = document.getElementById("status");
 const resultsEl = document.getElementById("results");
@@ -20,7 +21,17 @@ let lastDownloadName = "ocr-result.txt";
 let lastDownloadXlsxName = "ocr-result.xlsx";
 
 function getImportTypeLabel(value) {
-  return value === "complex" ? "Phức tạp (chậm)" : "Rõ ràng (nhanh)";
+  if (value === "complex_llm") {
+    return "PhÃ¡Â»Â©c tÃ¡ÂºÂ¡p + LLM (chÃ¡ÂºÂ­m nhÃ¡ÂºÂ¥t)";
+  }
+  return "RÃƒÂµ rÃƒÂ ng (nhanh)";
+}
+
+function getOcrRunStatusMessage(value) {
+  if (value === "complex_llm") {
+    return "Dang OCR che do phuc tap + LLM... vui long cho.";
+  }
+  return "Dang OCR che do nhanh... vui long cho.";
 }
 
 function humanSize(bytes) {
@@ -87,30 +98,30 @@ function renderFileCards(files) {
   clearPreviews();
 
   if (!files.length) {
-    statusEl.textContent = "Chưa chọn file nào.";
+    statusEl.textContent = "ChÃ†Â°a chÃ¡Â»Ân file nÃƒÂ o.";
     return;
   }
 
   if (files.length > 10) {
-    statusEl.textContent = `Lỗi: Chỉ được chọn tối đa 10 file (Hiện đang chọn ${files.length} file).`;
+    statusEl.textContent = `LÃ¡Â»â€”i: ChÃ¡Â»â€° Ã„â€˜Ã†Â°Ã¡Â»Â£c chÃ¡Â»Ân tÃ¡Â»â€˜i Ã„â€˜a 10 file (HiÃ¡Â»â€¡n Ã„â€˜ang chÃ¡Â»Ân ${files.length} file).`;
     return;
   }
 
   const maxSingleSize = 10 * 1024 * 1024; // 10MB
   const hasTooLargeFile = files.some(file => file.size > maxSingleSize);
   if (hasTooLargeFile) {
-    statusEl.textContent = "Lỗi: Dung lượng của mỗi file không được vượt quá 10MB.";
+    statusEl.textContent = "LÃ¡Â»â€”i: Dung lÃ†Â°Ã¡Â»Â£ng cÃ¡Â»Â§a mÃ¡Â»â€”i file khÃƒÂ´ng Ã„â€˜Ã†Â°Ã¡Â»Â£c vÃ†Â°Ã¡Â»Â£t quÃƒÂ¡ 10MB.";
     return;
   }
 
   const totalSize = files.reduce((sum, f) => sum + f.size, 0);
   const maxTotalSize = 15 * 1024 * 1024; // 15MB
   if (totalSize > maxTotalSize) {
-    statusEl.textContent = `Lỗi: Tổng dung lượng các file (${humanSize(totalSize)}) vượt quá giới hạn 15MB.`;
+    statusEl.textContent = `LÃ¡Â»â€”i: TÃ¡Â»â€¢ng dung lÃ†Â°Ã¡Â»Â£ng cÃƒÂ¡c file (${humanSize(totalSize)}) vÃ†Â°Ã¡Â»Â£t quÃƒÂ¡ giÃ¡Â»â€ºi hÃ¡ÂºÂ¡n 15MB.`;
     return;
   }
 
-  statusEl.textContent = `${files.length} file đã sẵn sàng để OCR.`;
+  statusEl.textContent = `${files.length} file Ã„â€˜ÃƒÂ£ sÃ¡ÂºÂµn sÃƒÂ ng Ã„â€˜Ã¡Â»Æ’ OCR.`;
 
   files.forEach((file) => {
     const url = URL.createObjectURL(file);
@@ -135,7 +146,7 @@ function renderFileCards(files) {
     } else if (file.name.toLowerCase().endsWith(".docx")) {
       const placeholder = document.createElement("div");
       placeholder.className = "placeholder";
-      placeholder.textContent = "Không hỗ trợ xem trước file Word. Bấm Run OCR để trích xuất text.";
+      placeholder.textContent = "KhÃƒÂ´ng hÃ¡Â»â€” trÃ¡Â»Â£ xem trÃ†Â°Ã¡Â»â€ºc file Word. BÃ¡ÂºÂ¥m Run OCR Ã„â€˜Ã¡Â»Æ’ trÃƒÂ­ch xuÃ¡ÂºÂ¥t text.";
       preview.appendChild(placeholder);
     } else {
       const placeholder = document.createElement("div");
@@ -148,7 +159,7 @@ function renderFileCards(files) {
     meta.className = "file-meta";
     meta.innerHTML = `
       <strong>${file.name}</strong>
-      <span>${file.type || "unknown type"} · ${humanSize(file.size)}</span>
+      <span>${file.type || "unknown type"} Ã‚Â· ${humanSize(file.size)}</span>
     `;
 
     card.append(preview, meta);
@@ -163,7 +174,7 @@ function renderResults(payload) {
   const results = Array.isArray(payload?.results) ? payload.results : [];
   if (!results.length) {
     resultsEl.classList.add("empty");
-    resultsEl.textContent = "Không có kết quả OCR.";
+    resultsEl.textContent = "KhÃƒÂ´ng cÃƒÂ³ kÃ¡ÂºÂ¿t quÃ¡ÂºÂ£ OCR.";
     resultMetaEl.textContent = "0 file.";
     lastOcrText = "";
     lastOcrPayload = null;
@@ -228,13 +239,14 @@ function renderResults(payload) {
     resultsEl.appendChild(item);
   });
 
-  resultMetaEl.textContent = `${results.length} file(s) processed · ${importTypeLabel}`;
+  resultMetaEl.textContent = `${results.length} file(s) processed Ã‚Â· ${importTypeLabel}`;
   lastOcrPayload = payload;
   lastOcrText = textChunks.join("\n\n---\n\n");
   lastDownloadName = `ocr-result-${new Date().toISOString().replace(/[:.]/g, "-")}.txt`;
   lastDownloadXlsxName = `ocr-result-${new Date().toISOString().replace(/[:.]/g, "-")}.xlsx`;
   downloadBtn.disabled = !lastOcrText;
   downloadXlsxBtn.disabled = !lastOcrPayload;
+  showExcelOptions(Boolean(lastOcrPayload));
 
   if (!hasRenderedContent) {
     resultsEl.classList.add("empty");
@@ -261,9 +273,9 @@ clearBtn.addEventListener("click", () => {
   }
   clearPreviews();
   resultsEl.className = "results empty";
-  resultsEl.textContent = "Chọn file rồi bấm Run OCR để xem text ở đây.";
-  statusEl.textContent = "Chưa chọn file nào.";
-  resultMetaEl.textContent = "Chưa có kết quả.";
+  resultsEl.textContent = "ChÃ¡Â»Ân file rÃ¡Â»â€œi bÃ¡ÂºÂ¥m Run OCR Ã„â€˜Ã¡Â»Æ’ xem text Ã¡Â»Å¸ Ã„â€˜ÃƒÂ¢y.";
+  statusEl.textContent = "ChÃ†Â°a chÃ¡Â»Ân file nÃƒÂ o.";
+  resultMetaEl.textContent = "ChÃ†Â°a cÃƒÂ³ kÃ¡ÂºÂ¿t quÃ¡ÂºÂ£.";
   lastOcrText = "";
   lastOcrPayload = null;
   downloadBtn.disabled = true;
@@ -271,6 +283,9 @@ clearBtn.addEventListener("click", () => {
   showExcelOptions(false);
   if (useLlmCheckbox) {
     useLlmCheckbox.checked = false;
+  }
+  if (includeSummaryCheckbox) {
+    includeSummaryCheckbox.checked = false;
   }
   if (layoutPreserveCheckbox) {
     layoutPreserveCheckbox.checked = true;
@@ -282,7 +297,6 @@ downloadBtn.addEventListener("click", () => {
     return;
   }
 
-  showExcelOptions(false);
   const blob = new Blob([lastOcrText], { type: "text/plain;charset=utf-8" });
   triggerDownload(blob, lastDownloadName);
 });
@@ -292,17 +306,12 @@ downloadXlsxBtn.addEventListener("click", async () => {
     return;
   }
 
-  /* Tạm thời bỏ qua cấu hình LLM Excel
-  if (excelOptionsEl?.classList.contains("hidden")) {
-    showExcelOptions(true);
-    statusEl.textContent = "Chọn có dùng LLM nếu cần, rồi bấm Download Excel lần nữa.";
-    return;
-  }
-  */
-
   downloadXlsxBtn.disabled = true;
-  const useLlm = false; // Tạm thời đặt mặc định là false
-  statusEl.textContent = "Đang tạo file Excel...";
+  const useLlm = Boolean(useLlmCheckbox?.checked);
+  const includeSummary = Boolean(includeSummaryCheckbox?.checked);
+  statusEl.textContent = includeSummary
+    ? "Dang tao file Excel va tom tat bang LLM..."
+    : "Dang tao file Excel...";
 
   try {
     const response = await fetch("/export/xlsx", {
@@ -313,6 +322,7 @@ downloadXlsxBtn.addEventListener("click", async () => {
       body: JSON.stringify({
         ...lastOcrPayload,
         use_llm: useLlm,
+        include_summary: includeSummary,
       }),
     });
 
@@ -323,7 +333,7 @@ downloadXlsxBtn.addEventListener("click", async () => {
       const message = parsed.isJson
         ? (payload.error || payload.message || "Excel export failed.")
         : "Server returned a non-JSON error page. Check backend logs.";
-      statusEl.textContent = "Không xuất được Excel.";
+      statusEl.textContent = "KhÃƒÂ´ng xuÃ¡ÂºÂ¥t Ã„â€˜Ã†Â°Ã¡Â»Â£c Excel.";
       console.error(message);
       return;
     }
@@ -332,9 +342,9 @@ downloadXlsxBtn.addEventListener("click", async () => {
     const filename = filenameFromContentDisposition(response.headers.get("Content-Disposition"))
       || lastDownloadXlsxName;
     triggerDownload(blob, filename);
-    statusEl.textContent = "Đã tải Excel.";
+    statusEl.textContent = "Ã„ÂÃƒÂ£ tÃ¡ÂºÂ£i Excel.";
   } catch (error) {
-    statusEl.textContent = "Không xuất được Excel.";
+    statusEl.textContent = "KhÃƒÂ´ng xuÃ¡ÂºÂ¥t Ã„â€˜Ã†Â°Ã¡Â»Â£c Excel.";
     console.error(error);
   } finally {
     downloadXlsxBtn.disabled = !lastOcrPayload;
@@ -346,26 +356,26 @@ form.addEventListener("submit", async (event) => {
 
   const files = Array.from(fileInput.files || []);
   if (!files.length) {
-    statusEl.textContent = "Hãy chọn ít nhất một file.";
+    statusEl.textContent = "HÃƒÂ£y chÃ¡Â»Ân ÃƒÂ­t nhÃ¡ÂºÂ¥t mÃ¡Â»â„¢t file.";
     return;
   }
 
   if (files.length > 10) {
-    statusEl.textContent = "Chỉ được phép chọn tối đa 10 file mỗi lượt.";
+    statusEl.textContent = "ChÃ¡Â»â€° Ã„â€˜Ã†Â°Ã¡Â»Â£c phÃƒÂ©p chÃ¡Â»Ân tÃ¡Â»â€˜i Ã„â€˜a 10 file mÃ¡Â»â€”i lÃ†Â°Ã¡Â»Â£t.";
     return;
   }
 
   const maxSingleSize = 10 * 1024 * 1024; // 10MB
   const hasTooLargeFile = files.some(file => file.size > maxSingleSize);
   if (hasTooLargeFile) {
-    statusEl.textContent = "Mỗi file tải lên không được vượt quá 10MB.";
+    statusEl.textContent = "MÃ¡Â»â€”i file tÃ¡ÂºÂ£i lÃƒÂªn khÃƒÂ´ng Ã„â€˜Ã†Â°Ã¡Â»Â£c vÃ†Â°Ã¡Â»Â£t quÃƒÂ¡ 10MB.";
     return;
   }
 
   const totalSize = files.reduce((sum, f) => sum + f.size, 0);
   const maxTotalSize = 15 * 1024 * 1024; // 15MB
   if (totalSize > maxTotalSize) {
-    statusEl.textContent = `Tổng dung lượng file (${humanSize(totalSize)}) vượt quá giới hạn 15MB.`;
+    statusEl.textContent = `TÃ¡Â»â€¢ng dung lÃ†Â°Ã¡Â»Â£ng file (${humanSize(totalSize)}) vÃ†Â°Ã¡Â»Â£t quÃƒÂ¡ giÃ¡Â»â€ºi hÃ¡ÂºÂ¡n 15MB.`;
     return;
   }
 
@@ -378,9 +388,7 @@ form.addEventListener("submit", async (event) => {
   clearBtn.disabled = true;
   downloadBtn.disabled = true;
   const selectedImportType = importTypeSelect?.value || "clear";
-  statusEl.textContent = selectedImportType === "complex"
-    ? "Đang OCR chế độ phức tạp... vui lòng chờ."
-    : "Đang OCR chế độ rõ ràng... vui lòng chờ.";
+  statusEl.textContent = getOcrRunStatusMessage(selectedImportType);
 
   try {
     const response = await fetch("/ocr", {
@@ -398,20 +406,19 @@ form.addEventListener("submit", async (event) => {
         ? (payload.error || payload.message || "OCR request failed.")
         : "Server returned a non-JSON error page. Check backend logs.";
       resultMetaEl.textContent = "Request failed.";
-      statusEl.textContent = "Có lỗi khi gọi OCR.";
+      statusEl.textContent = "CÃƒÂ³ lÃ¡Â»â€”i khi gÃ¡Â»Âi OCR.";
       lastOcrPayload = null;
       downloadXlsxBtn.disabled = true;
       return;
     }
 
     renderResults(payload);
-    showExcelOptions(false);
-    statusEl.textContent = `OCR xong ở chế độ ${getImportTypeLabel(payload?.import_type)}.`;
+    statusEl.textContent = `OCR xong Ã¡Â»Å¸ chÃ¡ÂºÂ¿ Ã„â€˜Ã¡Â»â„¢ ${getImportTypeLabel(payload?.import_type)}.`;
   } catch (error) {
     resultsEl.className = "results empty";
     resultsEl.textContent = error?.message || "Unknown error.";
     resultMetaEl.textContent = "Request failed.";
-    statusEl.textContent = "Không gọi được backend.";
+    statusEl.textContent = "KhÃƒÂ´ng gÃ¡Â»Âi Ã„â€˜Ã†Â°Ã¡Â»Â£c backend.";
   } finally {
     submitBtn.disabled = false;
     clearBtn.disabled = false;

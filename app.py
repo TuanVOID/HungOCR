@@ -3,8 +3,13 @@ import json
 import re
 import sys
 import tempfile
-from datetime import datetime
+import shutil
+import uuid
+from datetime import date, datetime, timedelta
 from io import BytesIO
+
+from dotenv import load_dotenv
+load_dotenv() # Load environmental variables from .env
 
 import numpy as np
 from PIL import Image
@@ -13,6 +18,7 @@ import pypdfium2 as pdfium
 import requests
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from werkzeug.utils import secure_filename
 
 # Ensure UTF-8 printing
 if hasattr(sys.stdout, 'reconfigure'):
@@ -24,14 +30,33 @@ app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
 app.config["MAX_CONTENT_LENGTH"] = 15 * 1024 * 1024  # 15 MB
 
 ALLOWED_EXTENSIONS = {'.pdf', '.png', '.jpg', '.jpeg', '.webp', '.bmp', '.tiff', '.tif', '.docx'}
+STORAGE_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir, "Storage"))
+STORAGE_INPUT_ROOT = os.path.join(STORAGE_ROOT, "input")
+STORAGE_OUTPUT_ROOT = os.path.join(STORAGE_ROOT, "output")
 
 @app.errorhandler(413)
 def request_entity_too_large(error):
     return jsonify({"error": "Tổng dung lượng file gửi lên vượt quá giới hạn (tối đa 15MB)."}), 413
 
+def get_int_env(name, default):
+    raw_value = os.getenv(name, str(default))
+    try:
+        return int(raw_value)
+    except (TypeError, ValueError):
+        return default
+
+
+STORAGE_RETENTION_DAYS = get_int_env("STORAGE_RETENTION_DAYS", 7)
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://192.168.0.6:11434").rstrip("/")
-CLASSIFIER_MODEL = os.getenv("CLASSIFIER_MODEL", "qwen3.5:9b-q4_K_M")
-LLM_CHUNK_MAX_CHARS = 3000
+CLASSIFIER_MODEL = os.getenv("CLASSIFIER_MODEL", "qwen3.5:4B")
+LLM_CHUNK_MAX_CHARS = get_int_env("LLM_CHUNK_MAX_CHARS", 6000)
+LLM_INPUT_MAX_CHARS = get_int_env("LLM_INPUT_MAX_CHARS", 6000)
+LLM_OUTPUT_MAX_TOKENS = get_int_env("LLM_OUTPUT_MAX_TOKENS", 6000)
+MAX_UPLOAD_FILE_SIZE_BYTES = get_int_env("MAX_UPLOAD_FILE_SIZE_BYTES", 10 * 1024 * 1024)
+MAX_PDF_PAGES = get_int_env("MAX_PDF_PAGES", 20)
+MAX_IMAGE_PIXELS = get_int_env("MAX_IMAGE_PIXELS", 20_000_000)
+MAX_IMAGE_EDGE = get_int_env("MAX_IMAGE_EDGE", 12000)
+MAX_DOCX_TEXT_CHARS = get_int_env("MAX_DOCX_TEXT_CHARS", 30000)
 
 # Global model placeholders
 detectors = {}
@@ -55,6 +80,79 @@ def normalize_import_type(raw_value):
     if value not in OCR_IMPORT_TYPES:
         return "clear"
     return value
+
+
+def ensure_storage_dirs():
+    os.makedirs(STORAGE_INPUT_ROOT, exist_ok=True)
+    os.makedirs(STORAGE_OUTPUT_ROOT, exist_ok=True)
+
+
+def build_storage_paths(raw_filename):
+    now = datetime.now()
+    date_folder = now.strftime("%Y-%m-%d")
+    timestamp = now.strftime("%H-%M-%S")
+    unique_id = uuid.uuid4().hex[:6]
+    safe_name = secure_filename(raw_filename or "") or "file"
+    stem, ext = os.path.splitext(safe_name)
+    base_name = f"{timestamp}_{unique_id}_{stem}"
+    input_dir = os.path.join(STORAGE_INPUT_ROOT, date_folder)
+    output_dir = os.path.join(STORAGE_OUTPUT_ROOT, date_folder)
+    os.makedirs(input_dir, exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
+    return {
+        "input_path": os.path.join(input_dir, base_name + ext),
+        "output_path": os.path.join(output_dir, base_name + ".json"),
+        "saved_at": now,
+    }
+
+
+def build_ocr_output_payload(filename, import_type, layout_preserve, pages_text, saved_at, status="success", message=""):
+    full_text = "\n\n".join(
+        str(page.get("text", "")).strip()
+        for page in pages_text
+        if str(page.get("text", "")).strip()
+    ).strip()
+    return {
+        "filename": filename,
+        "saved_at": saved_at.isoformat(timespec="seconds"),
+        "status": status,
+        "message": message,
+        "import_type": import_type,
+        "layout_preserve": layout_preserve,
+        "pages": pages_text,
+        "text": full_text,
+    }
+
+
+def write_ocr_output_json(output_path, payload):
+    with open(output_path, "w", encoding="utf-8") as output_file:
+        json.dump(payload, output_file, ensure_ascii=False, indent=2)
+
+
+def cleanup_storage_older_than(retention_days):
+    today = date.today()
+    current_week_start = today - timedelta(days=today.weekday())
+    weeks_to_keep = max(2, (retention_days + 6) // 7)
+    cutoff_date = current_week_start - timedelta(days=7 * (weeks_to_keep - 1))
+
+    for root_dir in (STORAGE_INPUT_ROOT, STORAGE_OUTPUT_ROOT):
+        if not os.path.exists(root_dir):
+            continue
+
+        for folder_name in os.listdir(root_dir):
+            folder_path = os.path.join(root_dir, folder_name)
+            if not os.path.isdir(folder_path):
+                continue
+            try:
+                folder_date = datetime.strptime(folder_name, "%Y-%m-%d").date()
+            except ValueError:
+                continue
+            # Keep the current week plus the most recent completed week.
+            if folder_date < cutoff_date:
+                try:
+                    shutil.rmtree(folder_path)
+                except Exception as cleanup_error:
+                    print(f"Warning: could not remove stored folder {folder_path}: {cleanup_error}")
 
 
 def get_detector(import_type="clear"):
@@ -113,6 +211,8 @@ def init_models():
     print("Models initialized successfully!")
 
 # Initialize on startup
+ensure_storage_dirs()
+cleanup_storage_older_than(STORAGE_RETENTION_DAYS)
 init_models()
 
 def crop_box(image, box, padding=3):
@@ -335,6 +435,42 @@ def check_file_signature(file_stream, extension):
     return False
 
 
+def preflight_input_file(temp_path, filename):
+    lower_name = (filename or "").lower()
+
+    if lower_name.endswith(".pdf"):
+        pdf_doc = pdfium.PdfDocument(temp_path)
+        try:
+            num_pages = len(pdf_doc)
+            if num_pages > MAX_PDF_PAGES:
+                raise ValueError(
+                    f"Tài liệu PDF vượt quá giới hạn số trang cho phép (tối đa {MAX_PDF_PAGES} trang, file này có {num_pages} trang)."
+                )
+        finally:
+            try:
+                close_fn = getattr(pdf_doc, "close", None)
+                if callable(close_fn):
+                    close_fn()
+            except Exception:
+                pass
+        return
+
+    if lower_name.endswith((".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".tif")):
+        with Image.open(temp_path) as img:
+            width, height = img.size
+            if width <= 0 or height <= 0:
+                raise ValueError("Ảnh đầu vào không hợp lệ.")
+            pixel_count = width * height
+            if pixel_count > MAX_IMAGE_PIXELS:
+                raise ValueError(
+                    f"Ảnh vượt quá giới hạn độ phân giải cho phép (tối đa {MAX_IMAGE_PIXELS:,} pixel, ảnh này có {pixel_count:,} pixel)."
+                )
+            if max(width, height) > MAX_IMAGE_EDGE:
+                raise ValueError(
+                    f"Ảnh vượt quá giới hạn kích thước cạnh cho phép (tối đa {MAX_IMAGE_EDGE} px mỗi cạnh, ảnh này là {width}x{height} px)."
+                )
+
+
 def autofit_worksheet(sheet, max_width=80):
     for column_cells in sheet.columns:
         column_letter = column_cells[0].column_letter
@@ -446,6 +582,13 @@ def split_text_into_chunks(text, max_chars=3000):
     return [c.strip() for c in chunks if c.strip()]
 
 
+def trim_text_for_llm(text, max_chars=LLM_INPUT_MAX_CHARS):
+    text = text or ""
+    if len(text) <= max_chars:
+        return text
+    return text[:max_chars].rstrip()
+
+
 def extract_json_object(text):
     if not text:
         return None
@@ -468,48 +611,45 @@ def extract_json_object(text):
     return None
 
 
-def call_ollama_structured_table(file_name, page_number, page_text):
+def call_ollama_structured_table(file_name, page_text):
+    page_text = trim_text_for_llm(page_text, LLM_INPUT_MAX_CHARS)
     prompt = f"""
-You convert OCR text into a clean, spreadsheet-friendly logical table.
-CRITICAL RULE: Do NOT just copy-paste raw text blocks or output a single column with raw lines of text. You must analyze the logical relationships, extract structured fields, and present them in a clean tabular grid.
+You convert raw OCR text extracted from a document into one or more clean, spreadsheet-friendly logical tables.
 
-Input document:
-- File: {file_name}
-- Page: {page_number}
+Input document filename: {file_name}
 
 Structuring Rules:
-1. **Analyze and Reconstruct Structure (Crucial)**:
-   - If the page contains a table, list of items, invoices, receipts, or statements:
-     Extract them into a multi-column table.
-     For transactional documents (invoices, receipts, orders), extract BOTH metadata (e.g., Invoice Number, Date, Customer, Total) and the detailed line items. Flatten them so each line item row also repeats the metadata in its columns (e.g. columns: [Số hóa đơn, Ngày, Khách hàng, STT/Mã hàng, Tên hàng hóa/Dịch vụ, Số lượng, Đơn giá, Thành tiền]). This makes the spreadsheet logical and easy to filter.
-     Do NOT copy-paste the entire row of data into a single cell; split each cell value logically.
-   - If the page is a key-value form (e.g., resume, application, profile) with no repeating items:
-     Format it as a two-column table with headers like ["Trường thông tin / Field", "Giá trị / Value"].
-   - If the page is mostly unstructured text:
-     Identify the key events, facts, topics, or entities and present them in a logical summary grid (e.g. columns: ["Đối tượng / Subject", "Chi tiết / Details"] or ["Ngày tháng / Date", "Sự kiện / Event"]).
-   - NEVER return a table with a single column containing the raw sentences or lines.
+1. **Analyze and Detect Logical Tables**:
+   - Carefully analyze the document content. A single document may contain multiple logical tables.
+   - For example, an invoice typically has:
+     - A "Thông tin chung" (General Info) table containing metadata like Invoice No, Date, Buyer, Seller, Payment Method, Total Amount. This should be structured as a 2-column key-value table: ["Trường thông tin / Attribute", "Giá trị / Value"].
+     - A "Chi tiết hàng hóa" (Line Items) table containing a grid of the goods or services, quantities, prices, etc. This should be structured as a multi-column table (e.g. headers: ["STT", "Tên hàng hóa", "Số lượng", "Đơn giá", "Thành tiền"]).
+   - Extract each table separately. Do NOT force distinct tables or metadata and grids to combine into a single messy sheet.
 
-2. **Clean and Refine Data**:
-   - Split compound strings. For example, if the OCR text is "Họ và tên: Nguyễn Văn A", do NOT put "Họ và tên: Nguyễn Văn A" in one cell. The header should be "Họ và tên", and the cell value should be "Nguyễn Văn A".
-   - Separate numbers, quantities, prices, dates, and unit names into their own logical columns rather than grouping them in a single cell.
-   - Clean up OCR noise (like stray vertical bars "|", trailing colons ":", bullet points, page numbers) from the values.
-   - Use Vietnamese for headers and values if the original text is in Vietnamese.
+2. **Clean and Standardize Data**:
+   - For key-value pairs (e.g., "Số hóa đơn: HD-00123"), split them into headers and values. The attribute name should be in the first column, and the value in the second column (do not keep "Số hóa đơn: HD-00123" combined in a single cell).
+   - Clean up OCR noise (like stray symbols "|", vertical lines, bullet points, leading/trailing colons ":", and extraneous spaces).
+   - Use professional Vietnamese terminology for table names, headers, and values (e.g., "Mã hàng", "Số lượng", "Đơn giá", "Thành tiền", "Ngày lập", "Thông tin chung").
 
 3. **Response Schema**:
    - Return ONLY a JSON object with this exact shape:
      {{
-       "title": "short sheet title in Vietnamese",
-       "headers": ["Header 1", "Header 2", ...],
-       "rows": [
+       "tables": [
          {{
-           "Header 1": "value 1",
-           "Header 2": "value 2"
+           "name": "Tên bảng ngắn gọn bằng tiếng Việt (ví dụ: Thông tin chung, Danh sách sản phẩm, v.v.)",
+           "headers": ["Header 1", "Header 2", ...],
+           "rows": [
+             {{
+               "Header 1": "value 1",
+               "Header 2": "value 2"
+             }}
+           ]
          }}
        ],
-       "notes": "short optional description of the layout choice in Vietnamese"
+       "notes": "Nhận xét ngắn gọn về cấu trúc dữ liệu đã trích xuất"
      }}
-   - Use empty strings for missing or empty values.
-   - Keep values concise and clean.
+   - Each sheet name must be under 25 characters to fit Excel's 31-character limit.
+   - Use empty strings for missing values.
 
 OCR text to structure:
 {page_text}
@@ -521,8 +661,10 @@ OCR text to structure:
             "model": CLASSIFIER_MODEL,
             "stream": False,
             "format": "json",
+            "think": False,
             "options": {
                 "temperature": 0,
+                "num_predict": LLM_OUTPUT_MAX_TOKENS,
             },
             "messages": [
                 {
@@ -545,6 +687,7 @@ OCR text to structure:
     if not isinstance(parsed, dict):
         raise ValueError("Ollama response did not contain valid JSON.")
     return parsed
+
 
 
 def normalize_llm_rows(llm_result, filename, page_number):
@@ -578,36 +721,94 @@ def normalize_llm_rows(llm_result, filename, page_number):
     return normalized_rows
 
 
-def style_worksheet_table(sheet):
-    header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid") # Steel Blue
-    header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+def style_worksheet_premium(sheet):
+    if not sheet:
+        return
+
+    # Colors and styles
+    header_fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid") # Navy Blue
+    header_font = Font(name="Segoe UI", size=11, bold=True, color="FFFFFF")
+    
+    zebra_fill = PatternFill(start_color="F2F5F8", end_color="F2F5F8", fill_type="solid") # Soft blue-gray
     
     thin_border = Border(
-        left=Side(style='thin', color='D3D3D3'),
-        right=Side(style='thin', color='D3D3D3'),
-        top=Side(style='thin', color='D3D3D3'),
-        bottom=Side(style='thin', color='D3D3D3')
+        left=Side(style='thin', color='D9D9D9'),
+        right=Side(style='thin', color='D9D9D9'),
+        top=Side(style='thin', color='D9D9D9'),
+        bottom=Side(style='thin', color='D9D9D9')
     )
     
-    # Format Headers (Row 1)
+    # 1. Format Headers (Row 1)
+    sheet.row_dimensions[1].height = 28
+    headers = []
     for col_idx in range(1, sheet.max_column + 1):
         cell = sheet.cell(row=1, column=col_idx)
         cell.fill = header_fill
         cell.font = header_font
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
         cell.border = thin_border
-        
-    # Format Data Rows
+        headers.append(str(cell.value or "").strip().lower())
+
+    # Helper function to check if string looks like numeric
+    def is_numeric(val_str):
+        if not val_str:
+            return False
+        cleaned = val_str.strip().replace(",", "").replace(".", "").replace("$", "").replace("%", "").replace("đ", "").replace("VND", "").replace("vnđ", "")
+        return cleaned.isdigit()
+
+    # 2. Format Data Rows
     for row_idx in range(2, sheet.max_row + 1):
+        sheet.row_dimensions[row_idx].height = 20
+        is_even = (row_idx % 2 == 0)
+        row_fill = zebra_fill if is_even else None
+        
         for col_idx in range(1, sheet.max_column + 1):
             cell = sheet.cell(row=row_idx, column=col_idx)
-            cell.font = Font(name="Calibri", size=11)
+            cell.font = Font(name="Segoe UI", size=10)
             cell.border = thin_border
-            val = str(cell.value or "")
-            if val.replace(".", "", 1).replace("-", "", 1).isdigit():
+            if row_fill:
+                cell.fill = row_fill
+                
+            val_str = str(cell.value or "").strip()
+            header = headers[col_idx - 1] if col_idx - 1 < len(headers) else ""
+            
+            # Smart alignment
+            is_num_col = any(k in header for k in ["giá", "tiền", "số lượng", "qty", "amount", "total", "price", "thành tiền", "đơn giá", "chi phí", "thuế", "tax", "doanh thu"])
+            is_num_val = is_numeric(val_str)
+            
+            is_center_col = any(k in header for k in ["page", "trang", "status", "trạng thái", "ngày", "date", "stt", "no."])
+            
+            if is_num_col or (is_num_val and len(val_str) < 15):
                 cell.alignment = Alignment(horizontal="right", vertical="center")
+            elif is_center_col or (len(val_str) <= 10 and not val_str.count(" ")):
+                cell.alignment = Alignment(horizontal="center", vertical="center")
             else:
-                cell.alignment = Alignment(horizontal="left", vertical="center")
+                # Text wrapping for long sentences
+                cell.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
+
+    # 3. Smart Auto-Fit Columns
+    for col_idx in range(1, sheet.max_column + 1):
+        column_cells = [sheet.cell(row=r, column=col_idx) for r in range(1, sheet.max_row + 1)]
+        column_letter = column_cells[0].column_letter
+        
+        longest = 0
+        has_long_text = False
+        for cell in column_cells:
+            cell_value = str(cell.value or "").strip()
+            if cell_value:
+                lines = cell_value.splitlines()
+                cell_longest_line = max(len(line) for line in lines) if lines else 0
+                longest = max(longest, cell_longest_line)
+                if len(cell_value) > 30:
+                    has_long_text = True
+                    
+        if has_long_text:
+            width = 40
+        else:
+            width = min(max(longest + 3, 12), 30)
+            
+        sheet.column_dimensions[column_letter].width = width
+
 
 
 def build_llm_structured_sheet(workbook, response_results):
@@ -628,16 +829,16 @@ def build_llm_structured_sheet(workbook, response_results):
                 sheet = workbook[sheet_name]
                 # Check headers matching
                 existing_headers = [c.value for c in sheet[1]]
-                # Exclude 'File' and 'Page'
-                if len(existing_headers) >= 2 and existing_headers[:2] == ["File", "Page"]:
-                    existing_headers = existing_headers[2:]
+                # Exclude 'Tên file'
+                if len(existing_headers) >= 1 and existing_headers[:1] == ["Tên file"]:
+                    existing_headers = existing_headers[1:]
                 if existing_headers == headers:
                     return sheet
                     
         # Otherwise create a new sheet
         sheet_name = unique_sheet_title(workbook, base_title, fallback="Dữ liệu phân tích")
         sheet = workbook.create_sheet(title=sheet_name)
-        sheet.append(["File", "Page"] + headers)
+        sheet.append(["Tên file"] + headers)
         created_sheets.add(sheet)
         return sheet
 
@@ -648,7 +849,7 @@ def build_llm_structured_sheet(workbook, response_results):
         if fallback_sheet is None:
             sheet_name = unique_sheet_title(workbook, "Chưa phân loại", fallback="Chưa phân loại")
             fallback_sheet = workbook.create_sheet(title=sheet_name)
-            fallback_sheet.append(["File", "Page", "Trạng thái", "Chi tiết / Văn bản"])
+            fallback_sheet.append(["Tên file", "Trạng thái", "Chi tiết / Văn bản"])
             created_sheets.add(fallback_sheet)
         return fallback_sheet
 
@@ -659,90 +860,91 @@ def build_llm_structured_sheet(workbook, response_results):
 
         if status != "success" or not isinstance(pages, list) or not pages:
             f_sheet = get_fallback_sheet()
-            f_sheet.append([filename, "", status or "error", file_result.get("message", "Lỗi xử lý file.")])
+            f_sheet.append([filename, status or "error", file_result.get("message", "Lỗi xử lý file.")])
             continue
 
-        for page in pages:
-            page_number = page.get("page_number", "")
-            page_text = normalize_cell_value(page.get("text", "")).strip()
-            if not page_text:
-                continue
+        # Combine text of all pages in the file
+        combined_texts = []
+        for p in pages:
+            p_num = p.get("page_number", 1)
+            p_txt = str(p.get("text", "")).strip()
+            if p_txt:
+                combined_texts.append(f"--- TRANG {p_num} ---\n{p_txt}")
 
-            chunks = split_text_into_chunks(page_text, max_chars=LLM_CHUNK_MAX_CHARS)
-            max_chunks = 5
+        full_file_text = "\n\n".join(combined_texts).strip()
+        if not full_file_text:
+            continue
+
+        try:
+            llm_result = call_ollama_structured_table(filename, full_file_text)
             
-            if len(chunks) > max_chunks:
-                notes.append(f"{filename} trang {page_number}: Văn bản quá dài, vượt quá giới hạn phân mảnh LLM.")
-                f_sheet = get_fallback_sheet()
-                f_sheet.append([filename, page_number, "error", f"Văn bản trang quá dài, vượt quá giới hạn ({len(chunks)}/{max_chunks} phần)."])
-                continue
-
-            for part_idx, chunk in enumerate(chunks):
-                part_label = f"trang {page_number} phần {part_idx + 1}"
-                try:
-                    llm_result = call_ollama_structured_table(filename, part_label, chunk)
+            # The new structured prompt returns a dict with "tables": [...]
+            tables = llm_result.get("tables", [])
+            if not isinstance(tables, list):
+                # Fallback to single table if LLM returned old schema
+                if isinstance(llm_result.get("headers"), list):
+                    tables = [llm_result]
+                else:
+                    tables = []
                     
-                    title = llm_result.get("title") or "Dữ liệu phân tích"
-                    headers = llm_result.get("headers", [])
-                    rows = llm_result.get("rows", [])
+            for table in tables:
+                title = table.get("name") or table.get("title") or "Dữ liệu phân tích"
+                headers = table.get("headers", [])
+                rows = table.get("rows", [])
+                
+                if not isinstance(headers, list):
+                    headers = []
+                if not isinstance(rows, list):
+                    rows = []
                     
-                    # Ensure headers and rows are valid list/dict
-                    if not isinstance(headers, list):
-                        headers = []
-                    if not isinstance(rows, list):
-                        rows = []
-                        
-                    headers = [normalize_cell_value(h).strip() for h in headers if normalize_cell_value(h).strip()]
-                    
-                    # If we got a valid table structure
-                    if headers and rows:
-                        sheet = get_target_sheet(title, headers)
-                        for row in rows:
-                            row_values = [filename, page_number]
-                            if isinstance(row, dict):
-                                for h in headers:
-                                    row_values.append(normalize_cell_value(row.get(h, "")))
-                            elif isinstance(row, (list, tuple)):
-                                for idx, h in enumerate(headers):
-                                    row_values.append(normalize_cell_value(row[idx]) if idx < len(row) else "")
-                            else:
-                                row_values.append(normalize_cell_value(row))
-                                # Pad remaining header columns
-                                row_values.extend([""] * (len(headers) - 1))
-                            sheet.append(row_values)
-                    else:
-                        # Fallback for empty or unstructured LLM output
-                        f_sheet = get_fallback_sheet()
-                        f_sheet.append([filename, page_number, "unstructured", chunk])
-                        
-                    llm_note = normalize_cell_value(llm_result.get("notes", "")).strip()
-                    if llm_note:
-                        notes.append(f"{filename} {part_label}: {llm_note}")
-                        
-                except Exception as exc:
-                    notes.append(f"{filename} {part_label}: Gặp lỗi khi gọi LLM ({exc}).")
+                headers = [normalize_cell_value(h).strip() for h in headers if normalize_cell_value(h).strip()]
+                
+                if headers and rows:
+                    sheet = get_target_sheet(title, headers)
+                    for row in rows:
+                        row_values = [filename]
+                        if isinstance(row, dict):
+                            for h in headers:
+                                row_values.append(normalize_cell_value(row.get(h, "")))
+                        elif isinstance(row, (list, tuple)):
+                            for idx, h in enumerate(headers):
+                                row_values.append(normalize_cell_value(row[idx]) if idx < len(row) else "")
+                        else:
+                            row_values.append(normalize_cell_value(row))
+                            row_values.extend([""] * (len(headers) - 1))
+                        sheet.append(row_values)
+                else:
+                    # Fallback for empty or unstructured table output
                     f_sheet = get_fallback_sheet()
-                    f_sheet.append([filename, page_number, "error", f"Lỗi gọi LLM: {exc}. Nội dung: {chunk[:200]}..."])
+                    f_sheet.append([filename, "unstructured", str(table)])
+                    
+            llm_note = normalize_cell_value(llm_result.get("notes", "")).strip()
+            if llm_note:
+                notes.append(f"{filename}: {llm_note}")
+                
+        except Exception as exc:
+            notes.append(f"{filename}: Gặp lỗi khi gọi LLM ({exc}).")
+            f_sheet = get_fallback_sheet()
+            f_sheet.append([filename, "error", f"Lỗi gọi LLM: {exc}. Nội dung văn bản xem tại tệp TXT."])
 
     # If no sheets were created, create a default empty sheet
     if not created_sheets:
         empty_sheet = workbook.create_sheet(title="Kết quả trống")
-        empty_sheet.append(["File", "Page", "Thông báo"])
-        empty_sheet.append(["", "", "Không trích xuất được dữ liệu có cấu trúc từ tài liệu."])
+        empty_sheet.append(["Tên file", "Thông báo"])
+        empty_sheet.append(["", "Không trích xuất được dữ liệu có cấu trúc từ tài liệu."])
         created_sheets.add(empty_sheet)
 
     # Apply styling & auto-fit columns for all created sheets
     for sheet in created_sheets:
-        autofit_worksheet(sheet, max_width=90)
-        style_worksheet_table(sheet)
+        style_worksheet_premium(sheet)
 
     if notes:
         notes_sheet = workbook.create_sheet(title=unique_sheet_title(workbook, "LLM Notes"))
         notes_sheet.append(["Thông tin phản hồi từ LLM"])
-        notes_sheet[1][0].font = Font(name="Calibri", size=11, bold=True)
+        notes_sheet[1][0].font = Font(name="Segoe UI", size=11, bold=True)
         for note in notes:
             notes_sheet.append([note])
-        autofit_worksheet(notes_sheet, max_width=120)
+        style_worksheet_premium(notes_sheet)
 
     return workbook.worksheets[0]
 
@@ -758,10 +960,15 @@ def build_excel_report(response_results, use_llm=False):
     else:
         build_standard_ocr_sheet(workbook, response_results)
 
+    # Style all worksheets in the workbook
+    for sheet in workbook.worksheets:
+        style_worksheet_premium(sheet)
+
     buffer = BytesIO()
     workbook.save(buffer)
     buffer.seek(0)
     return buffer
+
 
 def process_image_ocr(pil_img, import_type="clear", layout_preserve=False):
     detector = get_detector(import_type)
@@ -824,7 +1031,7 @@ def process_docx_text(file_path):
         doc = docx.Document(file_path)
         paragraphs_text = []
         total_chars = 0
-        max_chars_allowed = 30000
+        max_chars_allowed = MAX_DOCX_TEXT_CHARS
         
         for paragraph in doc.paragraphs:
             if paragraph.text.strip():
@@ -878,19 +1085,18 @@ def run_ocr():
     import_type = normalize_import_type(request.form.get("import_type"))
     import_type_label = OCR_IMPORT_TYPES[import_type]["label"]
     layout_preserve = request.form.get("layout_preserve", "false").lower() == "true"
+    cleanup_storage_older_than(STORAGE_RETENTION_DAYS)
         
     response_results = []
-    
-    from werkzeug.utils import secure_filename
  
     for file in uploaded_files:
         raw_filename = file.filename or "untitled"
         
-        # Check individual file size (max 10MB)
+        # Check individual file size before processing/OCR
         file.seek(0, 2)  # Seek to end
         file_size = file.tell()
         file.seek(0)  # Reset pointer
-        if file_size > 10 * 1024 * 1024:
+        if file_size > MAX_UPLOAD_FILE_SIZE_BYTES:
             response_results.append({
                 "filename": raw_filename,
                 "status": "error",
@@ -920,17 +1126,22 @@ def run_ocr():
         filename = secure_filename(raw_filename)
         if not filename:
             filename = f"file_{tempfile.mktemp().split('tmp')[-1]}"
-            
+        storage_paths = build_storage_paths(raw_filename)
+
         print(f"Processing uploaded file: {raw_filename} -> {filename}")
         
         # Save file to a temporary file
         fd, temp_path = tempfile.mkstemp()
         pdf_doc = None
+        pages_text = []
         try:
             with os.fdopen(fd, 'wb') as tmp:
                 file.save(tmp)
-                
-            pages_text = []
+
+            preflight_input_file(temp_path, filename)
+            with open(storage_paths["input_path"], "wb") as stored_input:
+                with open(temp_path, "rb") as source_input:
+                    stored_input.write(source_input.read())
             
             if filename.lower().endswith(".pdf"):
                 pdf_doc = pdfium.PdfDocument(temp_path)
@@ -958,7 +1169,15 @@ def run_ocr():
                     "page_number": 1,
                     "text": text
                 })
-                
+            output_payload = build_ocr_output_payload(
+                filename=filename,
+                import_type=import_type,
+                layout_preserve=layout_preserve,
+                pages_text=pages_text,
+                saved_at=storage_paths["saved_at"],
+            )
+            write_ocr_output_json(storage_paths["output_path"], output_payload)
+
             response_results.append({
                 "filename": filename,
                 "status": "success",
@@ -966,6 +1185,19 @@ def run_ocr():
             })
             
         except Exception as e:
+            try:
+                error_payload = build_ocr_output_payload(
+                    filename=filename,
+                    import_type=import_type,
+                    layout_preserve=layout_preserve,
+                    pages_text=pages_text,
+                    saved_at=storage_paths["saved_at"],
+                    status="error",
+                    message=str(e),
+                )
+                write_ocr_output_json(storage_paths["output_path"], error_payload)
+            except Exception as storage_error:
+                print(f"Warning: could not write OCR error output for {filename}: {storage_error}")
             response_results.append({
                 "filename": filename,
                 "status": "error",

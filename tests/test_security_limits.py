@@ -6,7 +6,7 @@ import os
 # Add root folder to sys.path so we can import app
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app import split_text_into_chunks, check_file_signature, normalize_cell_value, process_docx_text
+from app import split_text_into_chunks, check_file_signature, normalize_cell_value, process_docx_text, trim_text_for_llm, get_int_env, preflight_input_file
 
 class TestSecurityLimits(unittest.TestCase):
     
@@ -24,6 +24,43 @@ class TestSecurityLimits(unittest.TestCase):
         # Ensure no chunk exceeds 100 characters
         for chunk in chunks_long:
             self.assertTrue(len(chunk) <= 100)
+
+    def test_trim_text_for_llm(self):
+        text = "A" * 4000
+        trimmed = trim_text_for_llm(text, max_chars=3000)
+        self.assertEqual(len(trimmed), 3000)
+        self.assertEqual(trimmed, "A" * 3000)
+        self.assertEqual(trim_text_for_llm("short text", max_chars=3000), "short text")
+
+    def test_get_int_env(self):
+        with unittest.mock.patch.dict(os.environ, {"TEST_INT_ENV": "6000"}, clear=False):
+            self.assertEqual(get_int_env("TEST_INT_ENV", 123), 6000)
+        with unittest.mock.patch.dict(os.environ, {"TEST_INT_ENV": "invalid"}, clear=False):
+            self.assertEqual(get_int_env("TEST_INT_ENV", 123), 123)
+
+    @unittest.mock.patch('app.pdfium.PdfDocument')
+    def test_preflight_input_file_pdf_limit(self, mock_pdf_document):
+        mock_pdf = unittest.mock.MagicMock()
+        mock_pdf.__len__.return_value = 21
+        mock_pdf_document.return_value = mock_pdf
+
+        with self.assertRaises(ValueError) as context:
+            preflight_input_file("sample.pdf", "sample.pdf")
+
+        self.assertIn("PDF", str(context.exception))
+        mock_pdf.close.assert_called()
+
+    @unittest.mock.patch('app.Image.open')
+    def test_preflight_input_file_image_limit(self, mock_image_open):
+        mock_img = unittest.mock.MagicMock()
+        mock_img.size = (200, 200)
+        mock_image_open.return_value.__enter__.return_value = mock_img
+
+        with unittest.mock.patch('app.MAX_IMAGE_PIXELS', 10000), unittest.mock.patch('app.MAX_IMAGE_EDGE', 1000):
+            with self.assertRaises(ValueError) as context:
+                preflight_input_file("sample.png", "sample.png")
+
+        self.assertIn("Ảnh", str(context.exception))
             
     def test_normalize_cell_value_formula_injection(self):
         # Safe string
@@ -145,6 +182,33 @@ class TestSecurityLimits(unittest.TestCase):
         sheet2 = wb["Thông tin nhân sự"]
         self.assertEqual([c.value for c in sheet2[1]], ["File", "Page", "Trường thông tin", "Giá trị"])
         self.assertEqual([c.value for c in sheet2[2]], ["document.pdf", 2, "Họ và tên", "Nguyễn Văn A"])
+
+    @unittest.mock.patch('app.requests.post')
+    def test_call_ollama_structured_table_payload_limits(self, mock_post):
+        from app import call_ollama_structured_table
+
+        mock_response = unittest.mock.Mock()
+        mock_response.json.return_value = {
+            "message": {
+                "content": '{"title":"Bảng","headers":["Cột 1"],"rows":[{"Cột 1":"Giá trị"}],"notes":""}'
+            }
+        }
+        mock_response.raise_for_status.return_value = None
+        mock_post.return_value = mock_response
+
+        long_text = "X" * 7000
+        result = call_ollama_structured_table("sample.pdf", 1, long_text)
+
+        self.assertEqual(result["title"], "Bảng")
+        _, kwargs = mock_post.call_args
+        payload = kwargs["json"]
+        self.assertIn("think", payload)
+        self.assertFalse(payload["think"])
+        self.assertEqual(payload["options"]["num_predict"], 6000)
+
+        user_message = payload["messages"][1]["content"]
+        self.assertIn("X" * 6000, user_message)
+        self.assertNotIn("X" * 6001, user_message)
 
 if __name__ == '__main__':
     unittest.main()

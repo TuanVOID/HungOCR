@@ -292,15 +292,17 @@ downloadXlsxBtn.addEventListener("click", async () => {
     return;
   }
 
+  /* Tạm thời bỏ qua cấu hình LLM Excel
   if (excelOptionsEl?.classList.contains("hidden")) {
     showExcelOptions(true);
     statusEl.textContent = "Chọn có dùng LLM nếu cần, rồi bấm Download Excel lần nữa.";
     return;
   }
+  */
 
   downloadXlsxBtn.disabled = true;
-  const useLlm = Boolean(useLlmCheckbox?.checked);
-  statusEl.textContent = useLlm ? "Đang tạo file Excel bằng LLM..." : "Đang tạo file Excel...";
+  const useLlm = false; // Tạm thời đặt mặc định là false
+  statusEl.textContent = "Đang tạo file Excel...";
 
   try {
     const response = await fetch("/export/xlsx", {
@@ -330,7 +332,7 @@ downloadXlsxBtn.addEventListener("click", async () => {
     const filename = filenameFromContentDisposition(response.headers.get("Content-Disposition"))
       || lastDownloadXlsxName;
     triggerDownload(blob, filename);
-    statusEl.textContent = useLlm ? "Đã tải Excel bằng LLM." : "Đã tải Excel.";
+    statusEl.textContent = "Đã tải Excel.";
   } catch (error) {
     statusEl.textContent = "Không xuất được Excel.";
     console.error(error);

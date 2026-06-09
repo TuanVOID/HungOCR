@@ -38,7 +38,7 @@ STORAGE_OUTPUT_ROOT = os.path.join(STORAGE_ROOT, "output")
 
 @app.errorhandler(413)
 def request_entity_too_large(error):
-    return jsonify({"error": "TÃ¡Â»â€¢ng dung lÃ†Â°Ã¡Â»Â£ng file gÃ¡Â»Â­i lÃƒÂªn vÃ†Â°Ã¡Â»Â£t quÃƒÂ¡ giÃ¡Â»â€ºi hÃ¡ÂºÂ¡n (tÃ¡Â»â€˜i Ã„â€˜a 15MB)."}), 413
+    return jsonify({"error": "Tổng dung lượng file gửi lên vượt quá giới hạn (tối đa 15MB)."}), 413
 
 def get_int_env(name, default):
     raw_value = os.getenv(name, str(default))
@@ -605,7 +605,7 @@ def preflight_input_file(temp_path, filename):
             num_pages = len(pdf_doc)
             if num_pages > MAX_PDF_PAGES:
                 raise ValueError(
-                    f"TÃƒÂ i liÃ¡Â»â€¡u PDF vÃ†Â°Ã¡Â»Â£t quÃƒÂ¡ giÃ¡Â»â€ºi hÃ¡ÂºÂ¡n sÃ¡Â»â€˜ trang cho phÃƒÂ©p (tÃ¡Â»â€˜i Ã„â€˜a {MAX_PDF_PAGES} trang, file nÃƒÂ y cÃƒÂ³ {num_pages} trang)."
+                    f"Tài liệu PDF vượt quá giới hạn số trang cho phép (tối đa {MAX_PDF_PAGES} trang, tệp này có {num_pages} trang)."
                 )
         finally:
             try:
@@ -620,15 +620,15 @@ def preflight_input_file(temp_path, filename):
         with Image.open(temp_path) as img:
             width, height = img.size
             if width <= 0 or height <= 0:
-                raise ValueError("Ã¡ÂºÂ¢nh Ã„â€˜Ã¡ÂºÂ§u vÃƒÂ o khÃƒÂ´ng hÃ¡Â»Â£p lÃ¡Â»â€¡.")
+                raise ValueError("Ảnh đầu vào không hợp lệ.")
             pixel_count = width * height
             if pixel_count > MAX_IMAGE_PIXELS:
                 raise ValueError(
-                    f"Ã¡ÂºÂ¢nh vÃ†Â°Ã¡Â»Â£t quÃƒÂ¡ giÃ¡Â»â€ºi hÃ¡ÂºÂ¡n Ã„â€˜Ã¡Â»â„¢ phÃƒÂ¢n giÃ¡ÂºÂ£i cho phÃƒÂ©p (tÃ¡Â»â€˜i Ã„â€˜a {MAX_IMAGE_PIXELS:,} pixel, Ã¡ÂºÂ£nh nÃƒÂ y cÃƒÂ³ {pixel_count:,} pixel)."
+                    f"Ảnh vượt quá giới hạn độ phân giải cho phép (tối đa {MAX_IMAGE_PIXELS:,} pixel, ảnh này có {pixel_count:,} pixel)."
                 )
             if max(width, height) > MAX_IMAGE_EDGE:
                 raise ValueError(
-                    f"Ã¡ÂºÂ¢nh vÃ†Â°Ã¡Â»Â£t quÃƒÂ¡ giÃ¡Â»â€ºi hÃ¡ÂºÂ¡n kÃƒÂ­ch thÃ†Â°Ã¡Â»â€ºc cÃ¡ÂºÂ¡nh cho phÃƒÂ©p (tÃ¡Â»â€˜i Ã„â€˜a {MAX_IMAGE_EDGE} px mÃ¡Â»â€”i cÃ¡ÂºÂ¡nh, Ã¡ÂºÂ£nh nÃƒÂ y lÃƒÂ  {width}x{height} px)."
+                    f"Ảnh vượt quá giới hạn kích thước cạnh cho phép (tối đa {MAX_IMAGE_EDGE} px mỗi cạnh, ảnh này là {width}x{height} px)."
                 )
 
 
@@ -900,7 +900,7 @@ def call_ollama_ocr_spellcheck(page_text, chunk_index=None, chunk_total=None):
                     },
                     "prompt": prompt,
                 },
-                timeout=(10, OCR_LLM_TIMEOUT_SECONDS),
+                timeout=(120, OCR_LLM_TIMEOUT_SECONDS),
             )
             response.raise_for_status()
             payload = response.json()
@@ -983,7 +983,7 @@ def call_ollama_summary(document_name, source_text, round_number=1, chunk_index=
                     },
                     "prompt": prompt,
                 },
-                timeout=(10, SUMMARY_LLM_TIMEOUT_SECONDS),
+                timeout=(120, SUMMARY_LLM_TIMEOUT_SECONDS),
             )
             response.raise_for_status()
             payload = response.json()
@@ -1312,7 +1312,7 @@ Structuring Rules:
    - Extract each table separately. Do NOT force distinct tables or metadata and grids to combine into a single messy sheet.
 
 2. **Clean and Standardize Data**:
-   - For key-value pairs (e.g., "SÃ¡Â»â€˜ hÃƒÂ³a Ã„â€˜Ã†Â¡n: HD-00123"), split them into headers and values. The attribute name should be in the first column, and the value in the second column (do not keep "SÃ¡Â»â€˜ hÃƒÂ³a Ã„â€˜Ã†Â¡n: HD-00123" combined in a single cell).
+   - For key-value pairs (e.g., "Số hóa đơn: HD-00123"), split them into headers and values. The attribute name should be in the first column, and the value in the second column (do not keep "Số hóa đơn: HD-00123" combined in a single cell).
    - Clean up OCR noise (like stray symbols "|", vertical lines, bullet points, leading/trailing colons ":", and extraneous spaces).
    - Use professional Vietnamese terminology for table names, headers, and values (e.g., "MÃƒÂ£ hÃƒÂ ng", "SÃ¡Â»â€˜ lÃ†Â°Ã¡Â»Â£ng", "Ã„ÂÃ†Â¡n giÃƒÂ¡", "ThÃƒÂ nh tiÃ¡Â»Ân", "NgÃƒÂ y lÃ¡ÂºÂ­p", "ThÃƒÂ´ng tin chung").
 
@@ -1438,7 +1438,7 @@ def style_worksheet_premium(sheet):
     def is_numeric(val_str):
         if not val_str:
             return False
-        cleaned = val_str.strip().replace(",", "").replace(".", "").replace("$", "").replace("%", "").replace("Ã„â€˜", "").replace("VND", "").replace("vnÃ„â€˜", "")
+        cleaned = val_str.strip().replace(",", "").replace(".", "").replace("$", "").replace("%", "").replace("đ", "").replace("VND", "").replace("vnđ", "")
         return cleaned.isdigit()
 
     # 2. Format Data Rows
@@ -1461,7 +1461,7 @@ def style_worksheet_premium(sheet):
             is_num_col = any(k in header for k in ["giÃƒÂ¡", "tiÃ¡Â»Ân", "sÃ¡Â»â€˜ lÃ†Â°Ã¡Â»Â£ng", "qty", "amount", "total", "price", "thÃƒÂ nh tiÃ¡Â»Ân", "Ã„â€˜Ã†Â¡n giÃƒÂ¡", "chi phÃƒÂ­", "thuÃ¡ÂºÂ¿", "tax", "doanh thu"])
             is_num_val = is_numeric(val_str)
             
-            is_center_col = any(k in header for k in ["page", "trang", "status", "trÃ¡ÂºÂ¡ng thÃƒÂ¡i", "ngÃƒÂ y", "date", "stt", "no."])
+            is_center_col = any(k in header for k in ["page", "trang", "status", "trạng thái", "ngày", "date", "stt", "no."])
             
             if is_num_col or (is_num_val and len(val_str) < 15):
                 cell.alignment = Alignment(horizontal="right", vertical="center")
@@ -1504,9 +1504,9 @@ def build_llm_structured_sheet(workbook, response_results):
     def get_target_sheet(title, headers):
         title_str = normalize_cell_value(title).strip()
         if not title_str:
-            title_str = "DÃ¡Â»Â¯ liÃ¡Â»â€¡u phÃƒÂ¢n tÃƒÂ­ch"
+            title_str = "Dữ liệu phân tích"
             
-        base_title = sanitize_sheet_title(title_str, fallback="DÃ¡Â»Â¯ liÃ¡Â»â€¡u phÃƒÂ¢n tÃƒÂ­ch")
+        base_title = sanitize_sheet_title(title_str, fallback="Dữ liệu phân tích")
         
         # Check if we already created a sheet with similar name and matching headers
         for sheet_name in workbook.sheetnames:
@@ -1514,16 +1514,16 @@ def build_llm_structured_sheet(workbook, response_results):
                 sheet = workbook[sheet_name]
                 # Check headers matching
                 existing_headers = [c.value for c in sheet[1]]
-                # Exclude 'TÃƒÂªn file'
-                if len(existing_headers) >= 1 and existing_headers[:1] == ["TÃƒÂªn file"]:
+                # Exclude 'Tên file'
+                if len(existing_headers) >= 1 and existing_headers[:1] == ["Tên file"]:
                     existing_headers = existing_headers[1:]
                 if existing_headers == headers:
                     return sheet
                     
         # Otherwise create a new sheet
-        sheet_name = unique_sheet_title(workbook, base_title, fallback="DÃ¡Â»Â¯ liÃ¡Â»â€¡u phÃƒÂ¢n tÃƒÂ­ch")
+        sheet_name = unique_sheet_title(workbook, base_title, fallback="Dữ liệu phân tích")
         sheet = workbook.create_sheet(title=sheet_name)
-        sheet.append(["TÃƒÂªn file"] + headers)
+        sheet.append(["Tên file"] + headers)
         created_sheets.add(sheet)
         return sheet
 
@@ -1532,9 +1532,9 @@ def build_llm_structured_sheet(workbook, response_results):
     def get_fallback_sheet():
         nonlocal fallback_sheet
         if fallback_sheet is None:
-            sheet_name = unique_sheet_title(workbook, "ChÃ†Â°a phÃƒÂ¢n loÃ¡ÂºÂ¡i", fallback="ChÃ†Â°a phÃƒÂ¢n loÃ¡ÂºÂ¡i")
+            sheet_name = unique_sheet_title(workbook, "Chưa phân loại", fallback="Chưa phân loại")
             fallback_sheet = workbook.create_sheet(title=sheet_name)
-            fallback_sheet.append(["TÃƒÂªn file", "TrÃ¡ÂºÂ¡ng thÃƒÂ¡i", "Chi tiÃ¡ÂºÂ¿t / VÃ„Æ’n bÃ¡ÂºÂ£n"])
+            fallback_sheet.append(["Tên file", "Trạng thái", "Chi tiết / Văn bản"])
             created_sheets.add(fallback_sheet)
         return fallback_sheet
 
@@ -1545,7 +1545,7 @@ def build_llm_structured_sheet(workbook, response_results):
 
         if status != "success" or not isinstance(pages, list) or not pages:
             f_sheet = get_fallback_sheet()
-            f_sheet.append([filename, status or "error", file_result.get("message", "LÃ¡Â»â€”i xÃ¡Â»Â­ lÃƒÂ½ file.")])
+            f_sheet.append([filename, status or "error", file_result.get("message", "Lỗi xử lý file.")])
             continue
 
         # Combine text of all pages in the file
@@ -1566,7 +1566,7 @@ def build_llm_structured_sheet(workbook, response_results):
                     tables = []
                     
             for table in tables:
-                title = table.get("name") or table.get("title") or "DÃ¡Â»Â¯ liÃ¡Â»â€¡u phÃƒÂ¢n tÃƒÂ­ch"
+                title = table.get("name") or table.get("title") or "Dữ liệu phân tích"
                 headers = table.get("headers", [])
                 rows = table.get("rows", [])
                 
@@ -1603,12 +1603,12 @@ def build_llm_structured_sheet(workbook, response_results):
         except Exception as exc:
             notes.append(f"{filename}: GÃ¡ÂºÂ·p lÃ¡Â»â€”i khi gÃ¡Â»Âi LLM ({exc}).")
             f_sheet = get_fallback_sheet()
-            f_sheet.append([filename, "error", f"LÃ¡Â»â€”i gÃ¡Â»Âi LLM: {exc}. NÃ¡Â»â„¢i dung vÃ„Æ’n bÃ¡ÂºÂ£n xem tÃ¡ÂºÂ¡i tÃ¡Â»â€¡p TXT."])
+            f_sheet.append([filename, "error", f"LÃ¡Â»â€”i gÃ¡Â»Âi LLM: {exc}. Nội dung văn bản xem tại tệp TXT."])
 
     # If no sheets were created, create a default empty sheet
     if not created_sheets:
-        empty_sheet = workbook.create_sheet(title="KÃ¡ÂºÂ¿t quÃ¡ÂºÂ£ trÃ¡Â»â€˜ng")
-        empty_sheet.append(["TÃƒÂªn file", "ThÃƒÂ´ng bÃƒÂ¡o"])
+        empty_sheet = workbook.create_sheet(title="Kết quả trống")
+        empty_sheet.append(["Tên file", "Thông báo"])
         empty_sheet.append(["", "KhÃƒÂ´ng trÃƒÂ­ch xuÃ¡ÂºÂ¥t Ã„â€˜Ã†Â°Ã¡Â»Â£c dÃ¡Â»Â¯ liÃ¡Â»â€¡u cÃƒÂ³ cÃ¡ÂºÂ¥u trÃƒÂºc tÃ¡Â»Â« tÃƒÂ i liÃ¡Â»â€¡u."])
         created_sheets.add(empty_sheet)
 
@@ -1618,7 +1618,7 @@ def build_llm_structured_sheet(workbook, response_results):
 
     if notes:
         notes_sheet = workbook.create_sheet(title=unique_sheet_title(workbook, "LLM Notes"))
-        notes_sheet.append(["ThÃƒÂ´ng tin phÃ¡ÂºÂ£n hÃ¡Â»â€œi tÃ¡Â»Â« LLM"])
+        notes_sheet.append(["Thông tin phản hồi từ LLM"])
         notes_sheet[1][0].font = Font(name="Segoe UI", size=11, bold=True)
         for note in notes:
             notes_sheet.append([note])
@@ -1852,7 +1852,7 @@ def process_docx_text(file_path):
                 text = paragraph.text.strip()
                 total_chars += len(text)
                 if total_chars > max_chars_allowed:
-                    raise ValueError(f"TÃƒÂ i liÃ¡Â»â€¡u Word vÃ†Â°Ã¡Â»Â£t quÃƒÂ¡ giÃ¡Â»â€ºi hÃ¡ÂºÂ¡n kÃƒÂ½ tÃ¡Â»Â± cho phÃƒÂ©p (tÃ¡Â»â€˜i Ã„â€˜a {max_chars_allowed} kÃƒÂ½ tÃ¡Â»Â±).")
+                    raise ValueError(f"Tài liệu Word vượt quá giới hạn ký tự cho phép (tối đa {max_chars_allowed} ký tự).")
                 paragraphs_text.append(text)
         
         # Extract table texts
@@ -1866,7 +1866,7 @@ def process_docx_text(file_path):
                 if row_text:
                     total_chars += len(row_text)
                     if total_chars > max_chars_allowed:
-                        raise ValueError(f"TÃƒÂ i liÃ¡Â»â€¡u Word vÃ†Â°Ã¡Â»Â£t quÃƒÂ¡ giÃ¡Â»â€ºi hÃ¡ÂºÂ¡n kÃƒÂ½ tÃ¡Â»Â± cho phÃƒÂ©p (tÃ¡Â»â€˜i Ã„â€˜a {max_chars_allowed} kÃƒÂ½ tÃ¡Â»Â±).")
+                        raise ValueError(f"Tài liệu Word vượt quá giới hạn ký tự cho phép (tối đa {max_chars_allowed} ký tự).")
                     paragraphs_text.append(row_text)
                     
         return "\n".join(paragraphs_text)
@@ -1915,7 +1915,7 @@ def run_ocr():
             response_results.append({
                 "filename": raw_filename,
                 "status": "error",
-                "message": "Dung lÃ†Â°Ã¡Â»Â£ng file vÃ†Â°Ã¡Â»Â£t quÃƒÂ¡ giÃ¡Â»â€ºi hÃ¡ÂºÂ¡n cho phÃƒÂ©p (tÃ¡Â»â€˜i Ã„â€˜a 10MB mÃ¡Â»â€”i file)."
+                "message": "Dung lượng file vượt quá giới hạn cho phép (tối đa 10MB mỗi file)."
             })
             continue
         
@@ -1934,7 +1934,7 @@ def run_ocr():
             response_results.append({
                 "filename": raw_filename,
                 "status": "error",
-                "message": "NÃ¡Â»â„¢i dung tÃ¡Â»â€¡p khÃƒÂ´ng hÃ¡Â»Â£p lÃ¡Â»â€¡ hoÃ¡ÂºÂ·c Ã„â€˜ÃƒÂ£ bÃ¡Â»â€¹ thay Ã„â€˜Ã¡Â»â€¢i phÃ¡ÂºÂ§n mÃ¡Â»Å¸ rÃ¡Â»â„¢ng trÃƒÂ¡i phÃƒÂ©p."
+                "message": "Nội dung tệp không hợp lệ hoặc đã bị thay đổi phần mở rộng trái phép."
             })
             continue
  

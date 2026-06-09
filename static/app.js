@@ -3,35 +3,57 @@ const fileList = document.getElementById("file-list");
 const form = document.getElementById("ocr-form");
 const submitBtn = document.getElementById("submit-btn");
 const clearBtn = document.getElementById("clear-btn");
-const downloadBtn = document.getElementById("download-btn");
-const downloadXlsxBtn = document.getElementById("download-xlsx-btn");
+const downloadOcrTxtBtn = document.getElementById("download-ocr-txt-btn");
+const runSummaryBtn = document.getElementById("run-summary-btn");
+const downloadOcrXlsxBtn = document.getElementById("download-ocr-xlsx-btn");
+const downloadSummaryTxtBtn = document.getElementById("download-summary-txt-btn");
+const downloadSummaryXlsxBtn = document.getElementById("download-summary-xlsx-btn");
 const importTypeSelect = document.getElementById("import-type");
-const useLlmCheckbox = document.getElementById("use-llm");
-const includeSummaryCheckbox = document.getElementById("include-summary");
-const excelOptionsEl = document.getElementById("excel-options");
 const statusEl = document.getElementById("status");
+const statusDotEl = document.querySelector(".status-indicator-dot");
 const resultsEl = document.getElementById("results");
+const summaryResultsEl = document.getElementById("summary-results");
 const resultMetaEl = document.getElementById("result-meta");
+const summaryMetaEl = document.getElementById("summary-meta");
 const layoutPreserveCheckbox = document.getElementById("layout-preserve");
+const dropzoneLabel = document.getElementById("dropzone-label");
 
 let previewUrls = [];
 let lastOcrText = "";
 let lastOcrPayload = null;
-let lastDownloadName = "ocr-result.txt";
-let lastDownloadXlsxName = "ocr-result.xlsx";
+let lastSummaryPayload = null;
+let lastSummaryText = "";
+let lastDownloadOcrTxtName = "ocr-goc.txt";
+let lastDownloadOcrXlsxName = "ocr-goc.xlsx";
+let lastDownloadSummaryTxtName = "tom-tat-ai.txt";
+let lastDownloadSummaryXlsxName = "tom-tat-ai.xlsx";
 
 function getImportTypeLabel(value) {
   if (value === "complex_llm") {
-    return "PhÃ¡Â»Â©c tÃ¡ÂºÂ¡p + LLM (chÃ¡ÂºÂ­m nhÃ¡ÂºÂ¥t)";
+    return "Phức tạp + Tối ưu hóa AI (Chậm)";
   }
-  return "RÃƒÂµ rÃƒÂ ng (nhanh)";
+  return "Rõ ràng (nhanh)";
 }
 
 function getOcrRunStatusMessage(value) {
   if (value === "complex_llm") {
-    return "Dang OCR che do phuc tap + LLM... vui long cho.";
+    return "Đang trích xuất chế độ phức tạp + AI... vui lòng chờ.";
   }
-  return "Dang OCR che do nhanh... vui long cho.";
+  return "Đang trích xuất chế độ nhanh... vui lòng chờ.";
+}
+
+function setStatus(text, type = "idle") {
+  if (statusEl) {
+    statusEl.textContent = text;
+  }
+  if (statusDotEl) {
+    statusDotEl.className = "status-indicator-dot";
+    if (type === "active") {
+      statusDotEl.classList.add("active");
+    } else if (type === "running") {
+      statusDotEl.classList.add("running");
+    }
+  }
 }
 
 function humanSize(bytes) {
@@ -86,49 +108,226 @@ function filenameFromContentDisposition(disposition) {
   return asciiMatch?.[1] || "";
 }
 
-function showExcelOptions(show) {
-  if (!excelOptionsEl) {
+function clearSummaryPreview() {
+  lastSummaryPayload = null;
+  lastSummaryText = "";
+  if (summaryResultsEl) {
+    summaryResultsEl.className = "summary-results empty";
+    summaryResultsEl.innerHTML = `
+      <div class="empty-state-content">
+        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="empty-icon"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <p>Chạy xong OCR, sau đó bấm nút "Chạy tóm tắt AI" để trích xuất bảng phân tích nội dung.</p>
+      </div>
+    `;
+  }
+  if (summaryMetaEl) {
+    summaryMetaEl.textContent = "Chưa có tóm tắt.";
+  }
+}
+
+function updateActionState() {
+  const hasOcr = Boolean(lastOcrPayload);
+  const hasSummary = Boolean(lastSummaryPayload);
+  if (runSummaryBtn) {
+    runSummaryBtn.disabled = !hasOcr;
+  }
+  if (downloadOcrTxtBtn) {
+    downloadOcrTxtBtn.disabled = !hasOcr;
+  }
+  if (downloadOcrXlsxBtn) {
+    downloadOcrXlsxBtn.disabled = !hasOcr;
+  }
+  if (downloadSummaryTxtBtn) {
+    downloadSummaryTxtBtn.disabled = !hasSummary;
+  }
+  if (downloadSummaryXlsxBtn) {
+    downloadSummaryXlsxBtn.disabled = !hasSummary;
+  }
+}
+
+function buildSummaryText(payload) {
+  const summaries = Array.isArray(payload?.summaries) ? payload.summaries : [];
+  const lines = [];
+
+  summaries.forEach((summaryFile, index) => {
+    const filename = summaryFile.filename || `file-${index + 1}`;
+    lines.push(`File: ${filename}`);
+    if (summaryFile.detail) {
+      lines.push(`Ghi chú: ${summaryFile.detail}`);
+    }
+
+    const rows = Array.isArray(summaryFile.rows) ? summaryFile.rows : [];
+    rows.forEach((row, rowIndex) => {
+      if (!row || typeof row !== "object") {
+        return;
+      }
+      const group = row["Nhóm nội dung"] || "";
+      const content = row["Nội dung chính"] || "";
+      lines.push(`${rowIndex + 1}. ${group}: ${content}`.trim());
+    });
+    lines.push("");
+  });
+
+  return lines.join("\n").trim();
+}
+
+function renderSummaryResults(payload) {
+  if (!summaryResultsEl) {
     return;
   }
 
-  excelOptionsEl.classList.toggle("hidden", !show);
+  summaryResultsEl.classList.remove("empty");
+  summaryResultsEl.innerHTML = "";
+
+  const summaries = Array.isArray(payload?.summaries) ? payload.summaries : [];
+  if (!summaries.length) {
+    summaryResultsEl.classList.add("empty");
+    summaryResultsEl.innerHTML = `
+      <div class="empty-state-content">
+        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="empty-icon"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <p>Không có dữ liệu tóm tắt nào được trích xuất.</p>
+      </div>
+    `;
+    if (summaryMetaEl) {
+      summaryMetaEl.textContent = "0 file.";
+    }
+    lastSummaryPayload = null;
+    updateActionState();
+    return;
+  }
+
+  let renderedAny = false;
+  summaries.forEach((summaryFile) => {
+    const item = document.createElement("article");
+    item.className = "summary-item";
+
+    const head = document.createElement("div");
+    head.className = "summary-item-head";
+
+    const title = document.createElement("strong");
+    title.textContent = summaryFile.filename || "untitled";
+
+    const meta = document.createElement("span");
+    meta.textContent = summaryFile.detail || summaryFile.status || "";
+
+    head.append(title, meta);
+    item.appendChild(head);
+
+    const rows = Array.isArray(summaryFile.rows) ? summaryFile.rows : [];
+    if (!rows.length) {
+      const empty = document.createElement("div");
+      empty.className = "summary-empty";
+      empty.textContent = "Không có dòng tóm tắt.";
+      item.appendChild(empty);
+    } else {
+      const tableWrapper = document.createElement("div");
+      tableWrapper.className = "summary-table-wrapper";
+
+      const table = document.createElement("table");
+      table.className = "summary-table";
+
+      const thead = document.createElement("thead");
+      const headRow = document.createElement("tr");
+      ["Nhóm nội dung", "Nội dung chính"].forEach((label) => {
+        const th = document.createElement("th");
+        th.textContent = label;
+        headRow.appendChild(th);
+      });
+      thead.appendChild(headRow);
+
+      const tbody = document.createElement("tbody");
+      rows.forEach((row) => {
+        if (!row || typeof row !== "object") {
+          return;
+        }
+        const tr = document.createElement("tr");
+        const groupCell = document.createElement("td");
+        groupCell.textContent = row["Nhóm nội dung"] || "";
+        const contentCell = document.createElement("td");
+        contentCell.textContent = row["Nội dung chính"] || "";
+        tr.append(groupCell, contentCell);
+        tbody.appendChild(tr);
+      });
+
+      table.append(thead, tbody);
+      tableWrapper.appendChild(table);
+      item.appendChild(tableWrapper);
+    }
+
+    summaryResultsEl.appendChild(item);
+    renderedAny = true;
+  });
+
+  summaryResultsEl.classList.toggle("empty", !renderedAny);
+  if (summaryMetaEl) {
+    summaryMetaEl.textContent = `${summaries.length} file(s) tóm tắt.`;
+  }
+  lastSummaryPayload = payload;
+  lastSummaryText = buildSummaryText(payload);
+  updateActionState();
+}
+
+function removeSelectedFile(index) {
+  const dt = new DataTransfer();
+  const files = fileInput.files;
+  for (let i = 0; i < files.length; i++) {
+    if (i !== index) {
+      dt.items.add(files[i]);
+    }
+  }
+  fileInput.files = dt.files;
+  renderFileCards(Array.from(fileInput.files));
 }
 
 function renderFileCards(files) {
   clearPreviews();
 
   if (!files.length) {
-    statusEl.textContent = "ChÃ†Â°a chÃ¡Â»Ân file nÃƒÂ o.";
+    setStatus("Chưa chọn file nào.", "idle");
     return;
   }
 
   if (files.length > 10) {
-    statusEl.textContent = `LÃ¡Â»â€”i: ChÃ¡Â»â€° Ã„â€˜Ã†Â°Ã¡Â»Â£c chÃ¡Â»Ân tÃ¡Â»â€˜i Ã„â€˜a 10 file (HiÃ¡Â»â€¡n Ã„â€˜ang chÃ¡Â»Ân ${files.length} file).`;
+    setStatus(`Lỗi: Chỉ được chọn tối đa 10 file (Hiện đang chọn ${files.length} file).`, "idle");
     return;
   }
 
   const maxSingleSize = 10 * 1024 * 1024; // 10MB
   const hasTooLargeFile = files.some(file => file.size > maxSingleSize);
   if (hasTooLargeFile) {
-    statusEl.textContent = "LÃ¡Â»â€”i: Dung lÃ†Â°Ã¡Â»Â£ng cÃ¡Â»Â§a mÃ¡Â»â€”i file khÃƒÂ´ng Ã„â€˜Ã†Â°Ã¡Â»Â£c vÃ†Â°Ã¡Â»Â£t quÃƒÂ¡ 10MB.";
+    setStatus("Lỗi: Dung lượng của mỗi file không được vượt quá 10MB.", "idle");
     return;
   }
 
   const totalSize = files.reduce((sum, f) => sum + f.size, 0);
   const maxTotalSize = 15 * 1024 * 1024; // 15MB
   if (totalSize > maxTotalSize) {
-    statusEl.textContent = `LÃ¡Â»â€”i: TÃ¡Â»â€¢ng dung lÃ†Â°Ã¡Â»Â£ng cÃƒÂ¡c file (${humanSize(totalSize)}) vÃ†Â°Ã¡Â»Â£t quÃƒÂ¡ giÃ¡Â»â€ºi hÃ¡ÂºÂ¡n 15MB.`;
+    setStatus(`Lỗi: Tổng dung lượng các file (${humanSize(totalSize)}) vượt quá giới hạn 15MB.`, "idle");
     return;
   }
 
-  statusEl.textContent = `${files.length} file Ã„â€˜ÃƒÂ£ sÃ¡ÂºÂµn sÃƒÂ ng Ã„â€˜Ã¡Â»Æ’ OCR.`;
+  setStatus(`${files.length} file đã sẵn sàng để OCR.`, "active");
 
-  files.forEach((file) => {
+  files.forEach((file, index) => {
     const url = URL.createObjectURL(file);
     previewUrls.push(url);
 
     const card = document.createElement("article");
     card.className = "file-card";
+
+    // Close / delete button
+    const deleteBtn = document.createElement("button");
+    deleteBtn.type = "button";
+    deleteBtn.className = "btn-remove-file";
+    deleteBtn.innerHTML = `
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    `;
+    deleteBtn.title = "Xóa file này khỏi danh sách";
+    deleteBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      removeSelectedFile(index);
+    });
 
     const preview = document.createElement("div");
     preview.className = "file-preview";
@@ -146,12 +345,12 @@ function renderFileCards(files) {
     } else if (file.name.toLowerCase().endsWith(".docx")) {
       const placeholder = document.createElement("div");
       placeholder.className = "placeholder";
-      placeholder.textContent = "KhÃƒÂ´ng hÃ¡Â»â€” trÃ¡Â»Â£ xem trÃ†Â°Ã¡Â»â€ºc file Word. BÃ¡ÂºÂ¥m Run OCR Ã„â€˜Ã¡Â»Æ’ trÃƒÂ­ch xuÃ¡ÂºÂ¥t text.";
+      placeholder.textContent = "Không hỗ trợ xem trước file Word. Bấm Chạy OCR để trích xuất text.";
       preview.appendChild(placeholder);
     } else {
       const placeholder = document.createElement("div");
       placeholder.className = "placeholder";
-      placeholder.textContent = "Preview not available for this file type.";
+      placeholder.textContent = "Không có chế độ xem trước cho định dạng này.";
       preview.appendChild(placeholder);
     }
 
@@ -159,10 +358,10 @@ function renderFileCards(files) {
     meta.className = "file-meta";
     meta.innerHTML = `
       <strong>${file.name}</strong>
-      <span>${file.type || "unknown type"} Ã‚Â· ${humanSize(file.size)}</span>
+      <span>${file.type || "unknown type"} · ${humanSize(file.size)}</span>
     `;
 
-    card.append(preview, meta);
+    card.append(deleteBtn, preview, meta);
     fileList.appendChild(card);
   });
 }
@@ -174,13 +373,18 @@ function renderResults(payload) {
   const results = Array.isArray(payload?.results) ? payload.results : [];
   if (!results.length) {
     resultsEl.classList.add("empty");
-    resultsEl.textContent = "KhÃƒÂ´ng cÃƒÂ³ kÃ¡ÂºÂ¿t quÃ¡ÂºÂ£ OCR.";
+    resultsEl.innerHTML = `
+      <div class="empty-state-content">
+        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="empty-icon"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <p>Không có kết quả OCR.</p>
+      </div>
+    `;
     resultMetaEl.textContent = "0 file.";
     lastOcrText = "";
     lastOcrPayload = null;
-    downloadBtn.disabled = true;
-    downloadXlsxBtn.disabled = true;
-    showExcelOptions(false);
+    lastSummaryPayload = null;
+    clearSummaryPreview();
+    updateActionState();
     return;
   }
 
@@ -213,16 +417,41 @@ function renderResults(payload) {
 
         const pageLabel = document.createElement("div");
         pageLabel.className = "result-page-label";
-        pageLabel.textContent = `Page ${page.page_number ?? "?"}`;
+        pageLabel.textContent = `Trang ${page.page_number ?? "?"}`;
 
         const pre = document.createElement("pre");
-        pre.textContent = page.text || "(empty)";
+        pre.textContent = page.text || "(trống)";
 
-        pageBlock.append(pageLabel, pre);
+        // Copy button
+        const copyBtn = document.createElement("button");
+        copyBtn.type = "button";
+        copyBtn.className = "btn-copy-text";
+        copyBtn.innerHTML = `
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          <span>Sao chép</span>
+        `;
+        copyBtn.addEventListener("click", () => {
+          navigator.clipboard.writeText(page.text || "").then(() => {
+            copyBtn.classList.add("success");
+            copyBtn.innerHTML = `
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+              <span>Đã chép</span>
+            `;
+            setTimeout(() => {
+              copyBtn.classList.remove("success");
+              copyBtn.innerHTML = `
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                <span>Sao chép</span>
+              `;
+            }, 2000);
+          });
+        });
+
+        pageBlock.append(pageLabel, pre, copyBtn);
         item.appendChild(pageBlock);
         hasRenderedContent = true;
-        const pageText = page.text || "(empty)";
-        pageTexts.push(`Page ${page.page_number ?? "?"}\n${pageText}`);
+        const pageText = page.text || "(trống)";
+        pageTexts.push(`-------------------------------- trang ${page.page_number ?? "?"} -----------------------------\n${pageText}`);
       });
       textChunks.push(`File: ${fileResult.filename || "untitled"}\n${pageTexts.join("\n\n")}`);
     } else if (fileResult.message) {
@@ -233,24 +462,30 @@ function renderResults(payload) {
       pageBlock.appendChild(pre);
       item.appendChild(pageBlock);
       hasRenderedContent = true;
-      textChunks.push(`File: ${fileResult.filename || "untitled"}\nERROR: ${fileResult.message}`);
+      textChunks.push(`File: ${fileResult.filename || "untitled"}\nLỖI: ${fileResult.message}`);
     }
 
     resultsEl.appendChild(item);
   });
 
-  resultMetaEl.textContent = `${results.length} file(s) processed Ã‚Â· ${importTypeLabel}`;
+  resultMetaEl.textContent = `${results.length} file(s) processed · ${importTypeLabel}`;
   lastOcrPayload = payload;
   lastOcrText = textChunks.join("\n\n---\n\n");
-  lastDownloadName = `ocr-result-${new Date().toISOString().replace(/[:.]/g, "-")}.txt`;
-  lastDownloadXlsxName = `ocr-result-${new Date().toISOString().replace(/[:.]/g, "-")}.xlsx`;
-  downloadBtn.disabled = !lastOcrText;
-  downloadXlsxBtn.disabled = !lastOcrPayload;
-  showExcelOptions(Boolean(lastOcrPayload));
+  lastDownloadOcrTxtName = `ocr-goc-${new Date().toISOString().replace(/[:.]/g, "-")}.txt`;
+  lastDownloadOcrXlsxName = `ocr-goc-${new Date().toISOString().replace(/[:.]/g, "-")}.xlsx`;
+  lastDownloadSummaryTxtName = `tom-tat-ai-${new Date().toISOString().replace(/[:.]/g, "-")}.txt`;
+  lastDownloadSummaryXlsxName = `tom-tat-ai-${new Date().toISOString().replace(/[:.]/g, "-")}.xlsx`;
+  clearSummaryPreview();
+  updateActionState();
 
   if (!hasRenderedContent) {
     resultsEl.classList.add("empty");
-    resultsEl.textContent = "OCR finished but returned no text.";
+    resultsEl.innerHTML = `
+      <div class="empty-state-content">
+        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="empty-icon"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <p>OCR hoàn thành nhưng không trích xuất được văn bản nào.</p>
+      </div>
+    `;
   }
 }
 
@@ -260,6 +495,34 @@ function parseMaybeJson(text) {
   } catch {
     return { data: text, isJson: false };
   }
+}
+
+// Drag & Drop event bindings
+if (dropzoneLabel) {
+  ["dragenter", "dragover"].forEach((eventName) => {
+    dropzoneLabel.addEventListener(eventName, (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dropzoneLabel.classList.add("dragover");
+    }, false);
+  });
+
+  ["dragleave", "drop"].forEach((eventName) => {
+    dropzoneLabel.addEventListener(eventName, (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dropzoneLabel.classList.remove("dragover");
+    }, false);
+  });
+
+  dropzoneLabel.addEventListener("drop", (e) => {
+    const dt = e.dataTransfer;
+    const files = dt.files;
+    if (files && files.length > 0) {
+      fileInput.files = files;
+      renderFileCards(Array.from(fileInput.files));
+    }
+  });
 }
 
 fileInput.addEventListener("change", () => {
@@ -273,45 +536,41 @@ clearBtn.addEventListener("click", () => {
   }
   clearPreviews();
   resultsEl.className = "results empty";
-  resultsEl.textContent = "ChÃ¡Â»Ân file rÃ¡Â»â€œi bÃ¡ÂºÂ¥m Run OCR Ã„â€˜Ã¡Â»Æ’ xem text Ã¡Â»Å¸ Ã„â€˜ÃƒÂ¢y.";
-  statusEl.textContent = "ChÃ†Â°a chÃ¡Â»Ân file nÃƒÂ o.";
-  resultMetaEl.textContent = "ChÃ†Â°a cÃƒÂ³ kÃ¡ÂºÂ¿t quÃ¡ÂºÂ£.";
+  resultsEl.innerHTML = `
+    <div class="empty-state-content">
+      <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="empty-icon"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      <p>Chọn file và bấm nút "Chạy OCR" để bắt đầu nhận diện văn bản.</p>
+    </div>
+  `;
+  clearSummaryPreview();
+  setStatus("Chưa chọn file nào.", "idle");
+  resultMetaEl.textContent = "Chưa có kết quả.";
   lastOcrText = "";
   lastOcrPayload = null;
-  downloadBtn.disabled = true;
-  downloadXlsxBtn.disabled = true;
-  showExcelOptions(false);
-  if (useLlmCheckbox) {
-    useLlmCheckbox.checked = false;
-  }
-  if (includeSummaryCheckbox) {
-    includeSummaryCheckbox.checked = false;
-  }
+  lastSummaryPayload = null;
   if (layoutPreserveCheckbox) {
     layoutPreserveCheckbox.checked = true;
   }
+  updateActionState();
 });
 
-downloadBtn.addEventListener("click", () => {
+downloadOcrTxtBtn.addEventListener("click", () => {
   if (!lastOcrText) {
     return;
   }
 
   const blob = new Blob([lastOcrText], { type: "text/plain;charset=utf-8" });
-  triggerDownload(blob, lastDownloadName);
+  triggerDownload(blob, lastDownloadOcrTxtName);
+  setStatus("Đã tải OCR gốc (TXT).", "active");
 });
 
-downloadXlsxBtn.addEventListener("click", async () => {
+downloadOcrXlsxBtn.addEventListener("click", async () => {
   if (!lastOcrPayload) {
     return;
   }
 
-  downloadXlsxBtn.disabled = true;
-  const useLlm = Boolean(useLlmCheckbox?.checked);
-  const includeSummary = Boolean(includeSummaryCheckbox?.checked);
-  statusEl.textContent = includeSummary
-    ? "Dang tao file Excel va tom tat bang LLM..."
-    : "Dang tao file Excel...";
+  downloadOcrXlsxBtn.disabled = true;
+  setStatus("Đang xuất OCR gốc (XLSX)...", "running");
 
   try {
     const response = await fetch("/export/xlsx", {
@@ -321,8 +580,6 @@ downloadXlsxBtn.addEventListener("click", async () => {
       },
       body: JSON.stringify({
         ...lastOcrPayload,
-        use_llm: useLlm,
-        include_summary: includeSummary,
       }),
     });
 
@@ -333,21 +590,119 @@ downloadXlsxBtn.addEventListener("click", async () => {
       const message = parsed.isJson
         ? (payload.error || payload.message || "Excel export failed.")
         : "Server returned a non-JSON error page. Check backend logs.";
-      statusEl.textContent = "KhÃƒÂ´ng xuÃ¡ÂºÂ¥t Ã„â€˜Ã†Â°Ã¡Â»Â£c Excel.";
+      setStatus("Không xuất được OCR gốc (XLSX).", "active");
       console.error(message);
       return;
     }
 
     const blob = await response.blob();
     const filename = filenameFromContentDisposition(response.headers.get("Content-Disposition"))
-      || lastDownloadXlsxName;
+      || lastDownloadOcrXlsxName;
     triggerDownload(blob, filename);
-    statusEl.textContent = "Ã„ÂÃƒÂ£ tÃ¡ÂºÂ£i Excel.";
+    setStatus("Đã xuất OCR gốc (XLSX).", "active");
   } catch (error) {
-    statusEl.textContent = "KhÃƒÂ´ng xuÃ¡ÂºÂ¥t Ã„â€˜Ã†Â°Ã¡Â»Â£c Excel.";
+    setStatus("Không xuất được OCR gốc (XLSX).", "active");
     console.error(error);
   } finally {
-    downloadXlsxBtn.disabled = !lastOcrPayload;
+    updateActionState();
+  }
+});
+
+downloadSummaryTxtBtn.addEventListener("click", () => {
+  if (!lastSummaryText) {
+    return;
+  }
+
+  const blob = new Blob([lastSummaryText], { type: "text/plain;charset=utf-8" });
+  triggerDownload(blob, lastDownloadSummaryTxtName);
+  setStatus("Đã tải tóm tắt AI (TXT).", "active");
+});
+
+downloadSummaryXlsxBtn.addEventListener("click", async () => {
+  if (!lastSummaryPayload) {
+    return;
+  }
+
+  downloadSummaryXlsxBtn.disabled = true;
+  setStatus("Đang xuất tóm tắt AI (XLSX)...", "running");
+
+  try {
+    const response = await fetch("/export/summary-xlsx", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        ...lastOcrPayload,
+        summary_results: lastSummaryPayload?.summaries || null,
+      }),
+    });
+
+    if (!response.ok) {
+      const responseText = await response.text();
+      const parsed = parseMaybeJson(responseText);
+      const payload = parsed.isJson ? parsed.data : { raw: responseText };
+      const message = parsed.isJson
+        ? (payload.error || payload.message || "Summary Excel export failed.")
+        : "Server returned a non-JSON error page. Check backend logs.";
+      setStatus("Không xuất được tóm tắt AI (XLSX).", "active");
+      console.error(message);
+      return;
+    }
+
+    const blob = await response.blob();
+    const filename = filenameFromContentDisposition(response.headers.get("Content-Disposition"))
+      || lastDownloadSummaryXlsxName;
+    triggerDownload(blob, filename);
+    setStatus("Đã xuất tóm tắt AI (XLSX).", "active");
+  } catch (error) {
+    setStatus("Không xuất được tóm tắt AI (XLSX).", "active");
+    console.error(error);
+  } finally {
+    updateActionState();
+  }
+});
+
+runSummaryBtn.addEventListener("click", async () => {
+  if (!lastOcrPayload) {
+    return;
+  }
+
+  const originalHtml = runSummaryBtn.innerHTML;
+  runSummaryBtn.disabled = true;
+  runSummaryBtn.innerHTML = `<span class="spinner"></span> <span>Đang tóm tắt...</span>`;
+  setStatus("Đang chạy tóm tắt AI...", "running");
+
+  try {
+    const response = await fetch("/summarize", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(lastOcrPayload),
+    });
+
+    const responseText = await response.text();
+    const parsed = parseMaybeJson(responseText);
+    const payload = parsed.isJson ? parsed.data : { raw: responseText };
+
+    if (!response.ok) {
+      setStatus("Không chạy được tóm tắt AI.", "active");
+      const message = parsed.isJson
+        ? (payload.error || payload.message || "Summary request failed.")
+        : "Server returned a non-JSON error page. Check backend logs.";
+      console.error(message);
+      return;
+    }
+
+    renderSummaryResults(payload);
+    setStatus("Đã tạo bảng tóm tắt AI.", "active");
+  } catch (error) {
+    setStatus("Không chạy được tóm tắt AI.", "active");
+    console.error(error);
+  } finally {
+    runSummaryBtn.innerHTML = originalHtml;
+    updateActionState();
   }
 });
 
@@ -356,26 +711,26 @@ form.addEventListener("submit", async (event) => {
 
   const files = Array.from(fileInput.files || []);
   if (!files.length) {
-    statusEl.textContent = "HÃƒÂ£y chÃ¡Â»Ân ÃƒÂ­t nhÃ¡ÂºÂ¥t mÃ¡Â»â„¢t file.";
+    setStatus("Hãy chọn ít nhất một file.", "idle");
     return;
   }
 
   if (files.length > 10) {
-    statusEl.textContent = "ChÃ¡Â»â€° Ã„â€˜Ã†Â°Ã¡Â»Â£c phÃƒÂ©p chÃ¡Â»Ân tÃ¡Â»â€˜i Ã„â€˜a 10 file mÃ¡Â»â€”i lÃ†Â°Ã¡Â»Â£t.";
+    setStatus("Chỉ được phép chọn tối đa 10 file mỗi lượt.", "idle");
     return;
   }
 
   const maxSingleSize = 10 * 1024 * 1024; // 10MB
   const hasTooLargeFile = files.some(file => file.size > maxSingleSize);
   if (hasTooLargeFile) {
-    statusEl.textContent = "MÃ¡Â»â€”i file tÃ¡ÂºÂ£i lÃƒÂªn khÃƒÂ´ng Ã„â€˜Ã†Â°Ã¡Â»Â£c vÃ†Â°Ã¡Â»Â£t quÃƒÂ¡ 10MB.";
+    setStatus("Mỗi file tải lên không được vượt quá 10MB.", "idle");
     return;
   }
 
   const totalSize = files.reduce((sum, f) => sum + f.size, 0);
   const maxTotalSize = 15 * 1024 * 1024; // 15MB
   if (totalSize > maxTotalSize) {
-    statusEl.textContent = `TÃ¡Â»â€¢ng dung lÃ†Â°Ã¡Â»Â£ng file (${humanSize(totalSize)}) vÃ†Â°Ã¡Â»Â£t quÃƒÂ¡ giÃ¡Â»â€ºi hÃ¡ÂºÂ¡n 15MB.`;
+    setStatus(`Tổng dung lượng file (${humanSize(totalSize)}) vượt quá giới hạn 15MB.`, "idle");
     return;
   }
 
@@ -384,11 +739,19 @@ form.addEventListener("submit", async (event) => {
   formData.append("import_type", importTypeSelect?.value || "clear");
   formData.append("layout_preserve", layoutPreserveCheckbox?.checked ? "true" : "false");
 
+  const originalSubmitHtml = submitBtn.innerHTML;
   submitBtn.disabled = true;
+  submitBtn.innerHTML = `<span class="spinner"></span> <span>Đang xử lý OCR...</span>`;
+
   clearBtn.disabled = true;
-  downloadBtn.disabled = true;
+  downloadOcrTxtBtn.disabled = true;
+  downloadOcrXlsxBtn.disabled = true;
+  runSummaryBtn.disabled = true;
+  downloadSummaryTxtBtn.disabled = true;
+  downloadSummaryXlsxBtn.disabled = true;
+  
   const selectedImportType = importTypeSelect?.value || "clear";
-  statusEl.textContent = getOcrRunStatusMessage(selectedImportType);
+  setStatus(getOcrRunStatusMessage(selectedImportType), "running");
 
   try {
     const response = await fetch("/ocr", {
@@ -402,25 +765,34 @@ form.addEventListener("submit", async (event) => {
 
     if (!response.ok) {
       resultsEl.className = "results empty";
-      resultsEl.textContent = parsed.isJson
-        ? (payload.error || payload.message || "OCR request failed.")
-        : "Server returned a non-JSON error page. Check backend logs.";
-      resultMetaEl.textContent = "Request failed.";
-      statusEl.textContent = "CÃƒÂ³ lÃ¡Â»â€”i khi gÃ¡Â»Âi OCR.";
+      resultsEl.innerHTML = `
+        <div class="empty-state-content">
+          <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="empty-icon"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          <p>${parsed.isJson ? (payload.error || payload.message || "OCR request failed.") : "Server returned a non-JSON error page."}</p>
+        </div>
+      `;
+      resultMetaEl.textContent = "Yêu cầu thất bại.";
+      setStatus("Có lỗi khi gọi OCR.", "idle");
       lastOcrPayload = null;
-      downloadXlsxBtn.disabled = true;
       return;
     }
 
     renderResults(payload);
-    statusEl.textContent = `OCR xong Ã¡Â»Å¸ chÃ¡ÂºÂ¿ Ã„â€˜Ã¡Â»â„¢ ${getImportTypeLabel(payload?.import_type)}.`;
+    setStatus(`OCR xong ở chế độ ${getImportTypeLabel(payload?.import_type)}.`, "active");
   } catch (error) {
     resultsEl.className = "results empty";
-    resultsEl.textContent = error?.message || "Unknown error.";
-    resultMetaEl.textContent = "Request failed.";
-    statusEl.textContent = "KhÃƒÂ´ng gÃ¡Â»Âi Ã„â€˜Ã†Â°Ã¡Â»Â£c backend.";
+    resultsEl.innerHTML = `
+      <div class="empty-state-content">
+        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="empty-icon"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <p>${error?.message || "Unknown error."}</p>
+      </div>
+    `;
+    resultMetaEl.textContent = "Yêu cầu thất bại.";
+    setStatus("Không gọi được backend.", "idle");
   } finally {
     submitBtn.disabled = false;
+    submitBtn.innerHTML = originalSubmitHtml;
     clearBtn.disabled = false;
+    updateActionState();
   }
 });

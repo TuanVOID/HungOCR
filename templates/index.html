@@ -3,92 +3,162 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>PaddleOCR Test UI</title>
+  <title>Hệ thống Trích xuất & Tóm tắt Văn bản</title>
+  <!-- Google Fonts: Plus Jakarta Sans -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}" />
 </head>
 <body>
   <main class="shell">
     <section class="hero">
       <div class="hero-copy">
-        <p class="eyebrow">PaddleOCR backend test</p>
-        <h1>Upload file, extract text, and inspect the result on screen.</h1>
+        <p class="eyebrow">Cổng xử lý văn bản thông minh</p>
+        <h1>Trích xuất dữ liệu & Tóm tắt tài liệu</h1>
         <p class="subtext">
-          Chá»n áº£nh hoáº·c PDF, gá»­i lÃªn backend Flask, rá»“i xem text OCR ngay bÃªn dÆ°á»›i hoáº·c táº£i xuá»‘ng TXT / Excel.
+          Hỗ trợ trích xuất văn bản từ Ảnh, PDF, Word (.docx), kết hợp phân loại và tóm tắt thông tin thông minh qua mô hình AI.
         </p>
       </div>
-      <div class="hero-badge">
-        <span>Endpoint</span>
-        <strong>POST /ocr</strong>
-      </div>
     </section>
 
-    <section class="panel">
-      <form id="ocr-form" class="upload-card">
-        <label class="dropzone" for="files">
-          <input id="files" name="files" type="file" multiple accept="image/*,.pdf,.docx" />
-          <div class="dropzone-inner">
-            <strong>KÃ©o tháº£ hoáº·c báº¥m Ä‘á»ƒ chá»n file</strong>
-            <span>Há»— trá»£ áº£nh, PDF vÃ  Word (.docx). CÃ³ thá»ƒ chá»n nhiá»u file má»™t láº§n.</span>
+    <div class="dashboard-grid">
+      <!-- SIDEBAR: Controls -->
+      <aside class="dashboard-sidebar">
+        <form id="ocr-form" class="panel upload-card">
+          <div class="panel-header">
+            <svg class="panel-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            <h2>Tải tài liệu lên</h2>
           </div>
-        </label>
 
-        <div id="file-list" class="file-list"></div>
-
-        <div class="import-options">
-          <label class="import-label" for="import-type">Loáº¡i import</label>
-          <select id="import-type" name="import-type" class="select-control">
-            <option value="clear">RÃµ rÃ ng (nhanh)</option>
-            <option value="complex_llm">Phá»©c táº¡p + LLM (cháº­m nháº¥t)</option>
-          </select>
-          <p class="import-hint">Chon truoc khi bam Run OCR. Bat LLM neu can hau xu ly; con lai dung che do nhanh.</p>
-          <label class="export-option" for="layout-preserve" style="margin-top: 8px;">
-            <input id="layout-preserve" type="checkbox" checked />
-            <span>
-              Giá»¯ nguyÃªn bá»‘ cá»¥c (TXT)
-              <small>Sá»­ dá»¥ng khoáº£ng tráº¯ng Ä‘á»ƒ sáº¯p xáº¿p cÃ¡c cá»™t vÃ  Ä‘oáº¡n vÄƒn báº£n tÆ°Æ¡ng tá»± báº£n gá»‘c.</small>
-            </span>
+          <label class="dropzone" for="files" id="dropzone-label">
+            <input id="files" name="files" type="file" multiple accept="image/*,.pdf,.docx" />
+            <div class="dropzone-inner">
+              <div class="dropzone-icon-container">
+                <svg class="dropzone-icon" xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              </div>
+              <strong>Kéo thả hoặc bấm để chọn file</strong>
+              <span>Hỗ trợ ảnh, PDF và Word (.docx). Có thể chọn nhiều file.</span>
+            </div>
           </label>
-        </div>
 
-        <div id="excel-options" class="excel-options hidden" aria-live="polite">
-          <label class="export-option" for="use-llm">
-            <input id="use-llm" type="checkbox" />
-            <span>
-              Dùng LLM khi xuất Excel
-              <small>Tắt để xuất nhanh. Bật để Ollama chuyển OCR text sang dạng cột và sheet cấu trúc.</small>
-            </span>
-          </label>
-          <label class="export-option" for="include-summary">
-            <input id="include-summary" type="checkbox" />
-            <span>
-              Có tóm tắt
-              <small>Nếu bật, hệ thống sẽ gọi LLM để tóm tắt nội dung tài liệu. Tài liệu dài sẽ tự chia nhiều lượt tóm tắt theo giới hạn trong `.env`.</small>
-            </span>
-          </label>
-          <p class="excel-hint">Chọn tùy chọn rồi bấm Download Excel để tải file.</p>
-        </div>
+          <div id="file-list" class="file-list"></div>
 
-        <div class="actions">
-          <button id="submit-btn" type="submit">Run OCR</button>
-          <button id="clear-btn" type="button" class="secondary">Clear</button>
-          <button id="download-btn" type="button" class="secondary" disabled>Download TXT</button>
-          <button id="download-xlsx-btn" type="button" class="secondary" disabled>Download Excel</button>
-          <span id="status" class="status">ChÆ°a chá»n file nÃ o.</span>
-        </div>
-      </form>
-    </section>
+          <div class="import-options">
+            <div class="options-header">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+              <span>Cấu hình xử lý</span>
+            </div>
+            
+            <div class="control-group">
+              <label class="import-label" for="import-type">Loại import / Chế độ chạy</label>
+              <select id="import-type" name="import-type" class="select-control">
+                <option value="clear">Rõ ràng (Nhanh)</option>
+                <option value="complex_llm">Phức tạp + Hậu xử lý AI (Chậm)</option>
+              </select>
+            </div>
+            <p class="import-hint">Hãy bật chế độ Phức tạp + AI nếu bạn cần sửa lỗi chính tả và định dạng lại văn bản thông minh bằng mô hình AI.</p>
+            
+            <label class="export-option" for="layout-preserve">
+              <input id="layout-preserve" type="checkbox" checked />
+              <span>
+                Giữ nguyên bố cục trang (TXT)
+                <small>Sử dụng khoảng trắng để định vị cột, bảng biểu và khối văn bản tựa như bản gốc.</small>
+              </span>
+            </label>
+          </div>
 
-    <section class="panel">
-      <div class="result-box">
-        <div class="section-head">
-          <h2>OCR Text</h2>
-          <span id="result-meta">ChÆ°a cÃ³ káº¿t quáº£.</span>
-        </div>
-        <div id="results" class="results empty">
-          Chá»n file rá»“i báº¥m Run OCR Ä‘á»ƒ xem text á»Ÿ Ä‘Ã¢y.
-        </div>
-      </div>
-    </section>
+          <div class="actions-rail">
+            <div class="action-group">
+              <div class="action-group-head">
+                <h3>Xử lý OCR gốc</h3>
+              </div>
+              <div class="action-buttons-grid">
+                <button id="submit-btn" type="submit" class="btn-primary">
+                  <span class="btn-text">Chạy OCR</span>
+                </button>
+                <button id="clear-btn" type="button" class="btn-secondary">
+                  <span>Xóa hết</span>
+                </button>
+              </div>
+              <div class="action-buttons-grid">
+                <button id="download-ocr-txt-btn" type="button" class="btn-outline" disabled>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                  Tải TXT
+                </button>
+                <button id="download-ocr-xlsx-btn" type="button" class="btn-outline" disabled>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+                  Xuất Excel
+                </button>
+              </div>
+            </div>
+
+            <div class="action-group">
+              <div class="action-group-head">
+                <h3>Phân tích & Tóm tắt AI</h3>
+              </div>
+              <div class="action-buttons-grid single">
+                <button id="run-summary-btn" type="button" class="btn-primary-accent" disabled>
+                  <span>Chạy tóm tắt AI</span>
+                </button>
+              </div>
+              <div class="action-buttons-grid">
+                <button id="download-summary-txt-btn" type="button" class="btn-outline" disabled>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                  Tải TXT
+                </button>
+                <button id="download-summary-xlsx-btn" type="button" class="btn-outline" disabled>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+                  Xuất Excel
+                </button>
+              </div>
+            </div>
+
+            <div class="status-container">
+              <div class="status-indicator-dot"></div>
+              <span id="status" class="status">Chưa chọn file nào.</span>
+            </div>
+          </div>
+        </form>
+      </aside>
+
+      <!-- MAIN CONTENT: Results -->
+      <main class="dashboard-main-content">
+        <!-- OCR Results Panel -->
+        <section class="panel result-box">
+          <div class="section-head">
+            <div class="title-with-icon">
+              <svg class="section-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+              <h2>Kết quả OCR gốc</h2>
+            </div>
+            <span id="result-meta" class="meta-badge">Chưa có kết quả.</span>
+          </div>
+          <div id="results" class="results empty">
+            <div class="empty-state-content">
+              <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="empty-icon"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              <p>Chọn file và bấm nút "Chạy OCR" để bắt đầu nhận diện văn bản.</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- AI Summary Panel -->
+        <section class="panel result-box">
+          <div class="section-head">
+            <div class="title-with-icon">
+              <svg class="section-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+              <h2>Bảng tóm tắt nội dung AI</h2>
+            </div>
+            <span id="summary-meta" class="meta-badge">Chưa có tóm tắt.</span>
+          </div>
+          <div id="summary-results" class="summary-results empty">
+            <div class="empty-state-content">
+              <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="empty-icon"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              <p>Chạy xong OCR, sau đó bấm nút "Chạy tóm tắt AI" để trích xuất bảng phân tích nội dung.</p>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
   </main>
 
   <script src="{{ url_for('static', filename='app.js') }}"></script>

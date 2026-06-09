@@ -94,12 +94,12 @@ local_weights = 'C:/Indti/project-gitclone/deepdoc_vietocr/vietocr/weight/vgg_se
 
 OCR_IMPORT_TYPES = {
     "clear": {
-        "label": "RÃƒÂµ rÃƒÂ ng (nhanh)",
+        "label": "Rõ ràng (nhanh)",
         "det_db_score_mode": "fast",
         "llm_postprocess": False,
     },
     "complex_llm": {
-        "label": "PhÃ¡Â»Â©c tÃ¡ÂºÂ¡p + LLM (chÃ¡ÂºÂ­m nhÃ¡ÂºÂ¥t)",
+        "label": "Phức tạp + Tối ưu hóa AI (Chậm)",
         "det_db_score_mode": "slow",
         "llm_postprocess": True,
     },
@@ -645,14 +645,13 @@ def autofit_worksheet(sheet, max_width=80):
 
 def build_raw_ocr_sheet(workbook, response_results):
     sheet = workbook.create_sheet(title=unique_sheet_title(workbook, "Raw OCR"))
-    headers = ["File", "Page", "Status", "Text", "Message"]
+    headers = ["File", "Page", "Text"]
     sheet.append(headers)
     for cell in sheet[1]:
         cell.font = Font(bold=True)
 
     for file_result in response_results:
         filename = file_result.get("filename", "")
-        status = file_result.get("status", "")
         pages = file_result.get("pages", [])
 
         if isinstance(pages, list) and pages:
@@ -660,15 +659,11 @@ def build_raw_ocr_sheet(workbook, response_results):
                 sheet.append([
                     filename,
                     page.get("page_number", ""),
-                    status,
                     page.get("text", ""),
-                    "",
                 ])
         else:
             sheet.append([
                 filename,
-                "",
-                status,
                 "",
                 file_result.get("message", ""),
             ])
@@ -679,14 +674,13 @@ def build_raw_ocr_sheet(workbook, response_results):
 
 def build_standard_ocr_sheet(workbook, response_results):
     sheet = workbook.create_sheet(title=unique_sheet_title(workbook, "OCR Results"))
-    headers = ["File", "Page", "Status", "Text", "Message"]
+    headers = ["File", "Page", "Text"]
     sheet.append(headers)
     for cell in sheet[1]:
         cell.font = Font(bold=True)
 
     for file_result in response_results:
         filename = file_result.get("filename", "")
-        status = file_result.get("status", "")
         pages = file_result.get("pages", [])
 
         if isinstance(pages, list) and pages:
@@ -694,15 +688,11 @@ def build_standard_ocr_sheet(workbook, response_results):
                 sheet.append([
                     filename,
                     page.get("page_number", ""),
-                    status,
                     page.get("text", ""),
-                    "",
                 ])
         else:
             sheet.append([
                 filename,
-                "",
-                status,
                 "",
                 file_result.get("message", ""),
             ])
@@ -815,9 +805,21 @@ OCR_SPELLCHECK_SCHEMA = {
 SUMMARY_RESPONSE_SCHEMA = {
     "type": "object",
     "properties": {
-        "summary": {"type": "string"},
+        "rows": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "Nhóm nội dung": {"type": "string"},
+                    "Nội dung chính": {"type": "string"},
+                },
+                "required": ["Nhóm nội dung", "Nội dung chính"],
+                "additionalProperties": False,
+            },
+        },
+        "notes": {"type": "string"},
     },
-    "required": ["summary"],
+    "required": ["rows"],
     "additionalProperties": False,
 }
 
@@ -859,15 +861,17 @@ def build_summary_prompt(document_name, source_text, round_number=1, chunk_index
     return f"""
 <task>
   <role>You summarize OCR text extracted from Vietnamese legal and administrative documents for Excel review.</role>
-  <objective>Return one concise Vietnamese summary that stays faithful to the OCR text.</objective>
+  <objective>Return a compact Vietnamese summary table that can be written directly into Excel rows.</objective>
   <round>{round_number}</round>
 {chunk_header}  <rules>
     <rule>Write in Vietnamese.</rule>
     <rule>Do not invent facts, dates, document numbers, agencies, or conclusions that are not present in the OCR text.</rule>
-    <rule>Focus on the document type, issuing authority, document number/date, main topic, and key instructions when present.</rule>
-    <rule>If the OCR text is noisy or incomplete, mention that the summary is based on OCR text and may be incomplete.</rule>
-    <rule>Keep the summary concise and useful for a spreadsheet cell.</rule>
-    <rule>Return valid JSON only in the shape {{"summary":"..."}}.</rule>
+    <rule>Focus on major topics, responsibilities, scope, powers, procedures, obligations, timelines, exceptions, and other important sections when present.</rule>
+    <rule>Return 3 to 8 rows if possible, ordered from most important to less important.</rule>
+    <rule>Each row must have exactly two fields: "Nhóm nội dung" and "Nội dung chính".</rule>
+    <rule>"Nhóm nội dung" should be a short label. "Nội dung chính" should be concise but informative, suitable for a spreadsheet cell.</rule>
+    <rule>If the OCR text is noisy or incomplete, mention that in the notes field.</rule>
+    <rule>Return valid JSON only in the shape {{"rows":[{{"Nhóm nội dung":"...","Nội dung chính":"..."}}],"notes":"..."}}.</rule>
   </rules>
   <document_name>{document_name or "document"}</document_name>
   <input_text><![CDATA[
@@ -921,6 +925,39 @@ def call_ollama_ocr_spellcheck(page_text, chunk_index=None, chunk_total=None):
     raise RuntimeError("Unexpected Ollama spellcheck failure.")
 
 
+def normalize_summary_rows(rows):
+    normalized_rows = []
+    seen_pairs = set()
+
+    for item in rows or []:
+        if not isinstance(item, dict):
+            continue
+        group_name = normalize_cell_value(
+            item.get("Nhóm nội dung")
+            or item.get("group")
+            or item.get("title")
+            or item.get("name")
+        ).strip()
+        main_content = normalize_cell_value(
+            item.get("Nội dung chính")
+            or item.get("content")
+            or item.get("summary")
+            or item.get("value")
+        ).strip()
+        if not group_name or not main_content:
+            continue
+        pair = (group_name.casefold(), main_content.casefold())
+        if pair in seen_pairs:
+            continue
+        seen_pairs.add(pair)
+        normalized_rows.append({
+            "Nhóm nội dung": group_name,
+            "Nội dung chính": main_content,
+        })
+
+    return normalized_rows
+
+
 def call_ollama_summary(document_name, source_text, round_number=1, chunk_index=None, chunk_total=None):
     prompt = build_summary_prompt(
         document_name,
@@ -954,11 +991,12 @@ def call_ollama_summary(document_name, source_text, round_number=1, chunk_index=
             parsed = extract_json_object(content)
             if not isinstance(parsed, dict):
                 raise ValueError("Ollama summary response did not contain valid JSON.")
-            summary_text = normalize_cell_value(parsed.get("summary", "")).strip()
-            if not summary_text:
-                raise ValueError("Ollama summary response did not contain summary text.")
+            rows = normalize_summary_rows(parsed.get("rows", []))
+            if not rows:
+                raise ValueError("Ollama summary response did not contain summary rows.")
             return {
-                "summary": summary_text,
+                "rows": rows,
+                "notes": normalize_cell_value(parsed.get("notes", "")).strip(),
             }
         except (requests.RequestException, ValueError) as exc:
             last_error = exc
@@ -1113,98 +1151,149 @@ def summarize_document_text(document_text, document_name=""):
         return {
             "status": "skipped",
             "summary": "",
+            "rows": [],
             "detail": "Không có văn bản để tóm tắt.",
         }
 
     effective_chunk_limit = max(1, min(SUMMARY_LLM_CHUNK_MAX_CHARS, SUMMARY_LLM_INPUT_MAX_CHARS))
-    current_inputs = split_text_into_chunks(clean_text, effective_chunk_limit)
-    if not current_inputs:
+    chunks = split_text_into_chunks(clean_text, effective_chunk_limit)
+    if not chunks:
         return {
             "status": "skipped",
             "summary": "",
+            "rows": [],
             "detail": "Không có văn bản để tóm tắt.",
         }
 
-    original_chunk_count = len(current_inputs)
-    round_number = 0
+    original_chunk_count = len(chunks)
     failed_calls = 0
-    used_forced_grouping = False
+    all_rows = []
+    notes = []
 
-    while current_inputs:
-        round_number += 1
-        summaries = []
+    for index, chunk_text in enumerate(chunks, start=1):
+        try:
+            llm_result = call_ollama_summary(
+                document_name=document_name,
+                source_text=chunk_text,
+                round_number=1,
+                chunk_index=index,
+                chunk_total=len(chunks),
+            )
+            all_rows.extend(llm_result.get("rows", []))
+            chunk_note = normalize_cell_value(llm_result.get("notes", "")).strip()
+            if chunk_note:
+                notes.append(chunk_note)
+        except Exception as exc:
+            failed_calls += 1
+            print(
+                f"Warning: could not summarize {document_name or 'document'} "
+                f"chunk {index}/{len(chunks)}: {exc}"
+            )
+            fallback_excerpt = trim_text_for_llm(
+                chunk_text,
+                max_chars=min(max(300, SUMMARY_LLM_INPUT_MAX_CHARS // 2), SUMMARY_LLM_INPUT_MAX_CHARS),
+            )
+            if fallback_excerpt:
+                all_rows.append({
+                    "Nhóm nội dung": f"Phần trích OCR {index}",
+                    "Nội dung chính": f"Tóm tắt tạm dựa trên OCR chưa xử lý hết: {fallback_excerpt}",
+                })
 
-        for index, chunk_text in enumerate(current_inputs, start=1):
-            try:
-                llm_result = call_ollama_summary(
-                    document_name=document_name,
-                    source_text=chunk_text,
-                    round_number=round_number,
-                    chunk_index=index,
-                    chunk_total=len(current_inputs),
-                )
-                summaries.append(llm_result["summary"])
-            except Exception as exc:
-                failed_calls += 1
-                print(
-                    f"Warning: could not summarize {document_name or 'document'} "
-                    f"round {round_number} chunk {index}/{len(current_inputs)}: {exc}"
-                )
-                fallback_excerpt = trim_text_for_llm(
-                    chunk_text,
-                    max_chars=min(max(300, SUMMARY_LLM_INPUT_MAX_CHARS // 2), SUMMARY_LLM_INPUT_MAX_CHARS),
-                )
-                if fallback_excerpt:
-                    summaries.append(
-                        "Tóm tắt tạm dựa trên OCR chưa xử lý hết: "
-                        f"{fallback_excerpt}"
-                    )
+    all_rows = normalize_summary_rows(all_rows)
+    if not all_rows:
+        return {
+            "status": "failed",
+            "summary": "",
+            "rows": [],
+            "detail": "LLM không trả về tóm tắt hợp lệ.",
+        }
 
-        summaries = [normalize_cell_value(item).strip() for item in summaries if normalize_cell_value(item).strip()]
-        if not summaries:
-            return {
-                "status": "failed",
-                "summary": "",
-                "detail": "LLM không trả về tóm tắt hợp lệ.",
-            }
+    summary_row_limit = 12
+    if len(all_rows) > summary_row_limit:
+        overflow_rows = all_rows[summary_row_limit - 1:]
+        overflow_text = "; ".join(
+            f"{row['Nhóm nội dung']}: {row['Nội dung chính']}" for row in overflow_rows
+        )
+        all_rows = all_rows[:summary_row_limit - 1] + [{
+            "Nhóm nội dung": "Các nội dung khác",
+            "Nội dung chính": overflow_text,
+        }]
 
-        if len(summaries) == 1:
-            detail_parts = [
-                f"{original_chunk_count} phần gốc",
-                f"{round_number} vòng tóm tắt",
-            ]
-            if failed_calls:
-                detail_parts.append(f"{failed_calls} lần gọi LLM lỗi")
-            if used_forced_grouping:
-                detail_parts.append("có gom nhóm bổ sung cho tài liệu dài")
-            return {
-                "status": "partial" if failed_calls else "success",
-                "summary": summaries[0],
-                "detail": ", ".join(detail_parts),
-            }
-
-        next_inputs = pack_summary_inputs(summaries, effective_chunk_limit)
-        if len(next_inputs) >= len(summaries):
-            used_forced_grouping = True
-            next_inputs = []
-            for offset in range(0, len(summaries), 2):
-                grouped_text = "\n\n".join(summaries[offset:offset + 2]).strip()
-                if grouped_text:
-                    next_inputs.append(trim_text_for_llm(grouped_text, SUMMARY_LLM_INPUT_MAX_CHARS))
-
-        current_inputs = [item for item in next_inputs if str(item or "").strip()]
-        if round_number >= 6 and len(current_inputs) > 1:
-            return {
-                "status": "partial" if failed_calls else "failed",
-                "summary": current_inputs[0] if current_inputs else "",
-                "detail": "Vượt quá số vòng tóm tắt tối đa.",
-            }
+    summary_text = "\n".join(
+        f"- {row['Nhóm nội dung']}: {row['Nội dung chính']}"
+        for row in all_rows
+    )
+    detail_parts = [f"{original_chunk_count} phần gốc"]
+    if failed_calls:
+        detail_parts.append(f"{failed_calls} lần gọi LLM lỗi")
+    if notes:
+        detail_parts.append(f"{len(notes)} ghi chú LLM")
 
     return {
-        "status": "failed",
-        "summary": "",
-        "detail": "Không tạo được tóm tắt.",
+        "status": "partial" if failed_calls else "success",
+        "summary": summary_text,
+        "rows": all_rows,
+        "notes": notes,
+        "detail": ", ".join(detail_parts),
     }
+
+
+def build_summary_entries(response_results):
+    summary_entries = []
+
+    for file_result in response_results or []:
+        filename = file_result.get("filename", "")
+        status = file_result.get("status", "")
+        pages = file_result.get("pages", [])
+
+        stem = os.path.splitext(os.path.basename(filename))[0].strip()
+        sheet_title = f"Tóm tắt {stem}" if stem else "Tóm tắt"
+
+        if status != "success" or not isinstance(pages, list) or not pages:
+            summary_entries.append({
+                "filename": filename,
+                "sheet_title": sheet_title,
+                "status": status or "error",
+                "detail": file_result.get("message", "Lỗi xử lý file."),
+                "rows": [{
+                    "Nhóm nội dung": "Trạng thái",
+                    "Nội dung chính": file_result.get("message", status or "Lỗi xử lý file."),
+                }],
+            })
+            continue
+
+        full_file_text = build_combined_file_text(pages)
+        if not full_file_text:
+            summary_entries.append({
+                "filename": filename,
+                "sheet_title": sheet_title,
+                "status": "skipped",
+                "detail": "Không có văn bản để tóm tắt.",
+                "rows": [{
+                    "Nhóm nội dung": "Trạng thái",
+                    "Nội dung chính": "Không có văn bản để tóm tắt.",
+                }],
+            })
+            continue
+
+        summary_result = summarize_document_text(full_file_text, document_name=filename)
+        rows = normalize_summary_rows(summary_result.get("rows", []))
+        detail = normalize_cell_value(summary_result.get("detail", "")).strip()
+        if not rows:
+            rows = [{
+                "Nhóm nội dung": "Trạng thái",
+                "Nội dung chính": detail or "Không tạo được tóm tắt.",
+            }]
+
+        summary_entries.append({
+            "filename": filename,
+            "sheet_title": sheet_title,
+            "status": summary_result.get("status", "unknown"),
+            "detail": detail,
+            "rows": rows,
+        })
+
+    return summary_entries
 
 
 def call_ollama_structured_table(file_name, page_text):
@@ -1539,40 +1628,75 @@ def build_llm_structured_sheet(workbook, response_results):
 
 
 def build_summary_sheet(workbook, response_results):
-    sheet = workbook.create_sheet(title=unique_sheet_title(workbook, "Tóm tắt"))
-    sheet.append(["Tên file", "Trạng thái", "Tóm tắt", "Chi tiết"])
-
     for file_result in response_results:
         filename = file_result.get("filename", "")
         status = file_result.get("status", "")
         pages = file_result.get("pages", [])
 
+        stem = os.path.splitext(os.path.basename(filename))[0].strip()
+        sheet_title = f"Tóm tắt {stem}" if stem else "Tóm tắt"
+        sheet = workbook.create_sheet(title=unique_sheet_title(workbook, sheet_title))
+        sheet.append(["Nhóm nội dung", "Nội dung chính"])
+
         if status != "success" or not isinstance(pages, list) or not pages:
             sheet.append([
-                filename,
-                status or "error",
-                "",
-                file_result.get("message", "Lỗi xử lý file."),
+                "Trạng thái",
+                file_result.get("message", status or "Lỗi xử lý file."),
             ])
             continue
 
         full_file_text = build_combined_file_text(pages)
         if not full_file_text:
-            sheet.append([filename, "skipped", "", "Không có văn bản để tóm tắt."])
+            sheet.append(["Trạng thái", "Không có văn bản để tóm tắt."])
             continue
 
         summary_result = summarize_document_text(full_file_text, document_name=filename)
-        sheet.append([
-            filename,
-            summary_result.get("status", "unknown"),
-            summary_result.get("summary", ""),
-            summary_result.get("detail", ""),
-        ])
+        summary_rows = summary_result.get("rows", [])
+        if not summary_rows:
+            sheet.append([
+                "Trạng thái",
+                summary_result.get("detail", "Không tạo được tóm tắt."),
+            ])
+            continue
+
+        for row in summary_rows:
+            if not isinstance(row, dict):
+                continue
+            sheet.append([
+                normalize_cell_value(row.get("Nhóm nội dung", "")).strip(),
+                normalize_cell_value(row.get("Nội dung chính", "")).strip(),
+            ])
 
     return sheet
 
 
-def build_excel_report(response_results, use_llm=False, include_summary=False):
+def build_summary_sheet_from_entries(workbook, summary_entries):
+    created_sheet = None
+
+    for entry in summary_entries or []:
+        sheet_title = normalize_cell_value(entry.get("sheet_title", "")).strip() or "Tóm tắt"
+        sheet = workbook.create_sheet(title=unique_sheet_title(workbook, sheet_title))
+        if created_sheet is None:
+            created_sheet = sheet
+        sheet.append(["Nhóm nội dung", "Nội dung chính"])
+
+        rows = normalize_summary_rows(entry.get("rows", []))
+        if not rows:
+            rows = [{
+                "Nhóm nội dung": "Trạng thái",
+                "Nội dung chính": normalize_cell_value(entry.get("detail", "")).strip() or "Không tạo được tóm tắt.",
+            }]
+
+        for row in rows:
+            sheet.append([
+                normalize_cell_value(row.get("Nhóm nội dung", "")).strip(),
+                normalize_cell_value(row.get("Nội dung chính", "")).strip(),
+            ])
+
+    return created_sheet
+
+
+def build_excel_report(response_results, use_llm=False, include_summary=False, summary_entries=None):
     workbook = Workbook()
     default_sheet = workbook.active
     workbook.remove(default_sheet)
@@ -1584,7 +1708,8 @@ def build_excel_report(response_results, use_llm=False, include_summary=False):
         build_standard_ocr_sheet(workbook, response_results)
 
     if include_summary:
-        build_summary_sheet(workbook, response_results)
+        prepared_summary_entries = summary_entries if summary_entries is not None else build_summary_entries(response_results)
+        build_summary_sheet_from_entries(workbook, prepared_summary_entries)
 
     # Style all worksheets in the workbook
     for sheet in workbook.worksheets:
@@ -1594,6 +1719,65 @@ def build_excel_report(response_results, use_llm=False, include_summary=False):
     workbook.save(buffer)
     buffer.seek(0)
     return buffer
+
+
+def build_summary_excel_report(summary_entries):
+    workbook = Workbook()
+    default_sheet = workbook.active
+    workbook.remove(default_sheet)
+
+    prepared_entries = summary_entries or []
+    if not prepared_entries:
+        prepared_entries = [{
+            "sheet_title": "Tóm tắt",
+            "rows": [{
+                "Nhóm nội dung": "Trạng thái",
+                "Nội dung chính": "Không có dữ liệu tóm tắt.",
+            }],
+        }]
+
+    build_summary_sheet_from_entries(workbook, prepared_entries)
+
+    for sheet in workbook.worksheets:
+        style_worksheet_premium(sheet)
+
+    buffer = BytesIO()
+    workbook.save(buffer)
+    buffer.seek(0)
+    return buffer
+
+
+def is_clean_native_text(text, threshold=3):
+    if not text or len(text.strip()) < 40:
+        return False
+
+    # Common Vietnamese accented words
+    common_vi_words = [
+        r"\bvà\b", r"\bcủa\b", r"\bđược\b", r"\bcác\b", r"\btrong\b",
+        r"\bcó\b", r"\bkhông\b", r"\bcho\b", r"\bđể\b", r"\bvới\b",
+        r"\btại\b", r"\bluật\b", r"\bquyết\b", r"\bđịnh\b",
+        r"\bchính\b", r"\bphủ\b", r"\bnhân\b", r"\bdân\b", r"\btự\b"
+    ]
+
+    # Common English words
+    common_en_words = [
+        r"\bthe\b", r"\band\b", r"\bfor\b", r"\bthat\b", r"\bthis\b",
+        r"\bwith\b", r"\bfrom\b", r"\bhave\b", r"\bwere\b"
+    ]
+
+    text_lower = text.lower()
+
+    # Check Vietnamese
+    vi_matches = sum(1 for word_pat in common_vi_words if re.search(word_pat, text_lower))
+    if vi_matches >= threshold:
+        return True
+
+    # Check English
+    en_matches = sum(1 for word_pat in common_en_words if re.search(word_pat, text_lower))
+    if en_matches >= threshold:
+        return True
+
+    return False
 
 
 def process_image_ocr(pil_img, import_type="clear", layout_preserve=False):
@@ -1695,7 +1879,7 @@ def process_docx_text(file_path):
 def health():
     return jsonify({
         "status": "ready",
-        "engine": "paddle_vietocr"
+        "engine": "extraction_ocr_engine"
     })
 
 
@@ -1778,11 +1962,21 @@ def run_ocr():
                 pdf_doc = pdfium.PdfDocument(temp_path)
                 num_pages = len(pdf_doc)
                 if num_pages > 20:
-                    raise ValueError(f"TÃƒÂ i liÃ¡Â»â€¡u PDF vÃ†Â°Ã¡Â»Â£t quÃƒÂ¡ giÃ¡Â»â€ºi hÃ¡ÂºÂ¡n sÃ¡Â»â€˜ trang cho phÃƒÂ©p (tÃ¡Â»â€˜i Ã„â€˜a 20 trang, file nÃƒÂ y cÃƒÂ³ {num_pages} trang).")
+                    raise ValueError(f"Tài liệu PDF vượt quá giới hạn số trang cho phép (tối đa 20 trang, file này có {num_pages} trang).")
                 for i, page in enumerate(pdf_doc):
-                    bitmap = page.render(scale=2.0)
-                    pil_img = bitmap.to_pil()
-                    text = process_image_ocr(pil_img, import_type=import_type, layout_preserve=layout_preserve)
+                    # Try to extract text directly from PDF page first
+                    textpage = page.get_textpage()
+                    extracted_text = textpage.get_text_bounded().strip()
+                    
+                    if is_clean_native_text(extracted_text):
+                        print(f"Page {i+1}: Detected clean native text. Using direct extraction (fast path).")
+                        text = extracted_text
+                    else:
+                        print(f"Page {i+1}: Scanned page or garbled text. Rendering and running image OCR.")
+                        bitmap = page.render(scale=2.0)
+                        pil_img = bitmap.to_pil()
+                        text = process_image_ocr(pil_img, import_type=import_type, layout_preserve=layout_preserve)
+                        
                     llm_result = apply_ocr_spellcheck(text, source_name=raw_filename, page_number=i + 1) if llm_postprocess else None
                     pages_text.append({
                         "page_number": i + 1,
@@ -1875,12 +2069,25 @@ def run_ocr():
     })
 
 
+@app.route('/summarize', methods=['POST'])
+def summarize():
+    payload = request.get_json(silent=True) or {}
+    results = payload.get("results")
+
+    if not isinstance(results, list):
+        return jsonify({"error": "Missing OCR results for summary generation."}), 400
+
+    summary_entries = build_summary_entries(results)
+    return jsonify({
+        "status": "success",
+        "summaries": summary_entries,
+    })
+
+
 @app.route('/export/xlsx', methods=['POST'])
 def export_xlsx():
     payload = request.get_json(silent=True) or {}
     results = payload.get("results")
-    use_llm = bool(payload.get("use_llm"))
-    include_summary = bool(payload.get("include_summary"))
 
     if not isinstance(results, list):
         return jsonify({"error": "Missing OCR results for Excel export."}), 400
@@ -1888,14 +2095,39 @@ def export_xlsx():
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     workbook_bytes = build_excel_report(
         results,
-        use_llm=use_llm,
-        include_summary=include_summary,
+        use_llm=False,
+        include_summary=False,
     )
 
     return send_file(
         workbook_bytes,
         as_attachment=True,
-        download_name=f"ocr-result-{timestamp}.xlsx",
+        download_name=f"ocr-goc-{timestamp}.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
+@app.route('/export/summary-xlsx', methods=['POST'])
+def export_summary_xlsx():
+    payload = request.get_json(silent=True) or {}
+    results = payload.get("results")
+    summary_results = payload.get("summary_results")
+
+    if not isinstance(results, list):
+        return jsonify({"error": "Missing OCR results for summary Excel export."}), 400
+
+    if isinstance(summary_results, list) and summary_results:
+        prepared_summary_entries = summary_results
+    else:
+        prepared_summary_entries = build_summary_entries(results)
+
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    workbook_bytes = build_summary_excel_report(prepared_summary_entries)
+
+    return send_file(
+        workbook_bytes,
+        as_attachment=True,
+        download_name=f"tom-tat-ai-{timestamp}.xlsx",
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 

@@ -1916,6 +1916,20 @@ MODEL_INFERENCE_LOCK = threading.Lock()
 def process_image_ocr(pil_img, import_type="clear", layout_preserve=False):
     detector = get_detector(import_type)
     working_img = pil_img.convert("RGB") if pil_img.mode != "RGB" else pil_img
+
+    # Auto-downscale if running on CPU to avoid C++ segmentation fault on large images
+    paddle_device, _ = detect_ocr_devices()
+    if paddle_device == "cpu":
+        max_cpu_edge = 1500
+        if max(working_img.width, working_img.height) > max_cpu_edge:
+            scale = max_cpu_edge / max(working_img.width, working_img.height)
+            new_w = (int(working_img.width * scale) // 2) * 2
+            new_h = (int(working_img.height * scale) // 2) * 2
+            print(f"CPU Mode: Downscaling image from {working_img.width}x{working_img.height} to {new_w}x{new_h} to prevent C++ crash.")
+            resample_mode = getattr(Image, "Resampling", None)
+            resample_filter = resample_mode.BILINEAR if resample_mode else Image.BILINEAR
+            working_img = working_img.resize((new_w, new_h), resample_filter)
+
     if OCR_REMOVE_STAMPS:
         working_img, _ = remove_stamp_regions(working_img)
 
@@ -2123,7 +2137,7 @@ def run_ocr():
                     if is_clean_native_text(extracted_text):
                         pages_to_process.append((i + 1, "text", extracted_text))
                     else:
-                        bitmap = page.render(scale=2.0)
+                        bitmap = page.render(scale=1.5)
                         pages_to_process.append((i + 1, "image", bitmap.to_pil()))
 
                 # Define processing worker function for a single page

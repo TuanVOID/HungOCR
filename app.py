@@ -19,7 +19,7 @@ for env_var in ["FLAGS_use_mkldnn", "FLAGS_use_onednn"]:
     if val is not None and val.strip() != "":
         os.environ[env_var] = val.strip()
     else:
-        os.environ[env_var] = "1" # Default to enabled for speed
+        os.environ[env_var] = "0" # Default to disabled for compatibility (avoids crash on newer PaddlePaddle)
 
 
 import json
@@ -250,7 +250,7 @@ def get_detector(import_type="clear"):
             use_doc_orientation_classify=False,
             use_doc_unwarping=False,
             use_textline_orientation=True,
-            enable_mkldnn=get_bool_env("FLAGS_use_mkldnn", True),
+            enable_mkldnn=get_bool_env("FLAGS_use_mkldnn", False),
         )
 
         try:

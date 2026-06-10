@@ -232,6 +232,47 @@ OCR_MAX_WORKERS = get_int_env("OCR_MAX_WORKERS", 10)
 print(f"Setting up OCR thread pool with max_workers={OCR_MAX_WORKERS}")
 OCR_THREAD_POOL = ThreadPoolExecutor(max_workers=OCR_MAX_WORKERS)
 
+_cached_ocr_devices = None
+
+def detect_ocr_devices():
+    global _cached_ocr_devices
+    if _cached_ocr_devices is not None:
+        return _cached_ocr_devices
+
+    env_device = os.getenv("OCR_DEVICE", "auto").strip().lower()
+
+    if env_device == "gpu":
+        print("OCR Device forced to GPU via OCR_DEVICE environment variable.")
+        _cached_ocr_devices = ("gpu", "cuda")
+        return _cached_ocr_devices
+    elif env_device == "cpu":
+        print("OCR Device forced to CPU via OCR_DEVICE environment variable.")
+        _cached_ocr_devices = ("cpu", "cpu")
+        return _cached_ocr_devices
+
+    paddle_device = "cpu"
+    torch_device = "cpu"
+
+    # Check PyTorch CUDA availability
+    try:
+        import torch
+        if torch.cuda.is_available():
+            torch_device = "cuda"
+    except Exception:
+        pass
+
+    # Check PaddlePaddle CUDA availability
+    try:
+        import paddle
+        if paddle.is_compiled_with_cuda() and paddle.device.cuda.device_count() > 0:
+            paddle_device = "gpu"
+    except Exception:
+        pass
+
+    print(f"Automatically detected OCR devices -> Detector (Paddle): {paddle_device.upper()}, Recognizer (VietOCR/Torch): {torch_device.upper()}")
+    _cached_ocr_devices = (paddle_device, torch_device)
+    return _cached_ocr_devices
+
 def get_detector(import_type="clear"):
     import_type = normalize_import_type(import_type)
 
@@ -244,9 +285,10 @@ def get_detector(import_type="clear"):
 
         from paddleocr import PaddleOCR
 
+        paddle_device, _ = detect_ocr_devices()
         detector_kwargs = dict(
             lang="vi",
-            device="cpu",
+            device=paddle_device,
             use_doc_orientation_classify=False,
             use_doc_unwarping=False,
             use_textline_orientation=True,
@@ -279,7 +321,9 @@ def init_models():
 
     # Initialize VietOCR recognizer (VGG Seq2Seq model)
     config = Cfg.load_config_from_name('vgg_seq2seq')
-    config['device'] = 'cpu'
+    
+    _, torch_device = detect_ocr_devices()
+    config['device'] = torch_device
     config['predictor']['beamsearch'] = False
     if os.path.exists(local_weights):
         config['weights'] = local_weights

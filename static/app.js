@@ -590,7 +590,7 @@ downloadOcrXlsxBtn.addEventListener("click", async () => {
       const message = parsed.isJson
         ? (payload.error || payload.message || "Excel export failed.")
         : "Server returned a non-JSON error page. Check backend logs.";
-      setStatus("Không xuất được OCR gốc (XLSX).", "active");
+      setStatus(`Không xuất được OCR gốc (XLSX): ${message}`, "active");
       console.error(message);
       return;
     }
@@ -645,7 +645,7 @@ downloadSummaryXlsxBtn.addEventListener("click", async () => {
       const message = parsed.isJson
         ? (payload.error || payload.message || "Summary Excel export failed.")
         : "Server returned a non-JSON error page. Check backend logs.";
-      setStatus("Không xuất được tóm tắt AI (XLSX).", "active");
+      setStatus(`Không xuất được tóm tắt AI (XLSX): ${message}`, "active");
       console.error(message);
       return;
     }
@@ -687,10 +687,10 @@ runSummaryBtn.addEventListener("click", async () => {
     const payload = parsed.isJson ? parsed.data : { raw: responseText };
 
     if (!response.ok) {
-      setStatus("Không chạy được tóm tắt AI.", "active");
       const message = parsed.isJson
         ? (payload.error || payload.message || "Summary request failed.")
         : "Server returned a non-JSON error page. Check backend logs.";
+      setStatus(`Không chạy được tóm tắt AI: ${message}`, "active");
       console.error(message);
       return;
     }

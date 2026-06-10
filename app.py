@@ -1601,15 +1601,15 @@ def build_llm_structured_sheet(workbook, response_results):
                 notes.append(f"{filename}: {llm_note}")
                 
         except Exception as exc:
-            notes.append(f"{filename}: GÃ¡ÂºÂ·p lÃ¡Â»â€”i khi gÃ¡Â»Âi LLM ({exc}).")
+            notes.append(f"{filename}: Gặp lỗi khi gọi LLM ({exc}).")
             f_sheet = get_fallback_sheet()
-            f_sheet.append([filename, "error", f"LÃ¡Â»â€”i gÃ¡Â»Âi LLM: {exc}. Nội dung văn bản xem tại tệp TXT."])
+            f_sheet.append([filename, "error", f"Lỗi gọi LLM: {exc}. Nội dung văn bản xem tại tệp TXT."])
 
     # If no sheets were created, create a default empty sheet
     if not created_sheets:
         empty_sheet = workbook.create_sheet(title="Kết quả trống")
         empty_sheet.append(["Tên file", "Thông báo"])
-        empty_sheet.append(["", "KhÃƒÂ´ng trÃƒÂ­ch xuÃ¡ÂºÂ¥t Ã„â€˜Ã†Â°Ã¡Â»Â£c dÃ¡Â»Â¯ liÃ¡Â»â€¡u cÃƒÂ³ cÃ¡ÂºÂ¥u trÃƒÂºc tÃ¡Â»Â« tÃƒÂ i liÃ¡Â»â€¡u."])
+        empty_sheet.append(["", "Không trích xuất được dữ liệu có cấu trúc từ tài liệu."])
         created_sheets.add(empty_sheet)
 
     # Apply styling & auto-fit columns for all created sheets
@@ -1873,7 +1873,7 @@ def process_docx_text(file_path):
     except ValueError as ve:
         raise ve
     except Exception as e:
-        raise ValueError(f"KhÃƒÂ´ng thÃ¡Â»Æ’ Ã„â€˜Ã¡Â»Âc file Word: {str(e)}")
+        raise ValueError(f"Không thể đọc file Word: {str(e)}")
 
 @app.route('/health', methods=['GET'])
 def health():
@@ -1929,7 +1929,7 @@ def run_ocr():
             response_results.append({
                 "filename": raw_filename,
                 "status": "error",
-                "message": "Ã„ÂÃ¡Â»â€¹nh dÃ¡ÂºÂ¡ng tÃ¡Â»â€¡p khÃƒÂ´ng Ã„â€˜Ã†Â°Ã¡Â»Â£c hÃ¡Â»â€” trÃ¡Â»Â£."
+                "message": "Định dạng tệp không được hỗ trợ."
             })
             continue
  

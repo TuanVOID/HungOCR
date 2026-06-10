@@ -6,7 +6,7 @@ import os
 # Add root folder to sys.path so we can import app
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app import split_text_into_chunks, check_file_signature, normalize_cell_value, process_docx_text, trim_text_for_llm, get_int_env, preflight_input_file, build_ocr_spellcheck_prompt, call_ollama_ocr_spellcheck, apply_ocr_spellcheck, apply_ocr_corrections, normalize_import_type, OCR_IMPORT_TYPES
+from app import split_text_into_chunks, check_file_signature, normalize_cell_value, process_docx_text, trim_text_for_llm, get_int_env, preflight_input_file, estimate_file_pages, build_ocr_spellcheck_prompt, call_ollama_ocr_spellcheck, apply_ocr_spellcheck, apply_ocr_corrections, normalize_import_type, OCR_IMPORT_TYPES
 from tools.benchmark_thuvienphapluat_legal_ocr import normalize_for_scoring
 
 class TestSecurityLimits(unittest.TestCase):
@@ -334,6 +334,36 @@ class TestSecurityLimits(unittest.TestCase):
         self.assertEqual(normalize_import_type("clear"), "clear")
         self.assertIn("complex_llm", OCR_IMPORT_TYPES)
         self.assertTrue(OCR_IMPORT_TYPES["complex_llm"]["llm_postprocess"])
+
+    def test_estimate_file_pages_image(self):
+        # Images should always be estimated as 1 page
+        self.assertEqual(estimate_file_pages("dummy_path.png", "dummy_path.png"), 1)
+        self.assertEqual(estimate_file_pages("dummy_path.jpg", "dummy_path.jpg"), 1)
+
+    @unittest.mock.patch('app.pdfium.PdfDocument')
+    def test_estimate_file_pages_pdf(self, mock_pdf_document):
+        mock_pdf = unittest.mock.MagicMock()
+        mock_pdf.__len__.return_value = 5
+        mock_pdf_document.return_value = mock_pdf
+
+        pages = estimate_file_pages("sample.pdf", "sample.pdf")
+        self.assertEqual(pages, 5)
+        mock_pdf.close.assert_called()
+
+    @unittest.mock.patch('docx.Document')
+    def test_estimate_file_pages_docx(self, mock_docx_document):
+        mock_doc = unittest.mock.MagicMock()
+        
+        # Mock document paragraphs with 5000 characters in total
+        mock_para = unittest.mock.MagicMock()
+        mock_para.text = "A" * 5000
+        mock_doc.paragraphs = [mock_para]
+        mock_doc.tables = []
+        mock_docx_document.return_value = mock_doc
+
+        # 5000 / 3000 = 1.66 -> ceil to 2 pages
+        pages = estimate_file_pages("sample.docx", "sample.docx")
+        self.assertEqual(pages, 2)
 
 if __name__ == '__main__':
     unittest.main()

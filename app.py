@@ -108,7 +108,7 @@ SUMMARY_LLM_CHUNK_MAX_CHARS = get_int_env("SUMMARY_LLM_CHUNK_MAX_CHARS", 6000)
 SUMMARY_LLM_INPUT_MAX_CHARS = get_int_env("SUMMARY_LLM_INPUT_MAX_CHARS", 6000)
 SUMMARY_LLM_OUTPUT_MAX_TOKENS = get_int_env("SUMMARY_LLM_OUTPUT_MAX_TOKENS", 1200)
 MAX_UPLOAD_FILE_SIZE_BYTES = get_int_env("MAX_UPLOAD_FILE_SIZE_BYTES", 10 * 1024 * 1024)
-MAX_PDF_PAGES = get_int_env("MAX_PDF_PAGES", 20)
+MAX_PDF_PAGES = get_int_env("MAX_PDF_PAGES", 10)
 MAX_IMAGE_PIXELS = get_int_env("MAX_IMAGE_PIXELS", 20_000_000)
 MAX_IMAGE_EDGE = get_int_env("MAX_IMAGE_EDGE", 12000)
 MAX_DOCX_TEXT_CHARS = get_int_env("MAX_DOCX_TEXT_CHARS", 30000)
@@ -671,6 +671,51 @@ def preflight_input_file(temp_path, filename):
                 raise ValueError(
                     f"Ảnh vượt quá giới hạn kích thước cạnh cho phép (tối đa {MAX_IMAGE_EDGE} px mỗi cạnh, ảnh này là {width}x{height} px)."
                 )
+
+
+
+def estimate_file_pages(temp_path, filename):
+    lower_name = (filename or "").lower()
+    if lower_name.endswith(".pdf"):
+        pdf_doc = pdfium.PdfDocument(temp_path)
+        try:
+            num_pages = len(pdf_doc)
+            return num_pages
+        finally:
+            try:
+                close_fn = getattr(pdf_doc, "close", None)
+                if callable(close_fn):
+                    close_fn()
+            except Exception:
+                pass
+            
+    elif lower_name.endswith((".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".tif")):
+        return 1
+        
+    elif lower_name.endswith(".docx"):
+        import docx
+        doc = docx.Document(temp_path)
+        total_chars = 0
+        for paragraph in doc.paragraphs:
+            if paragraph.text.strip():
+                total_chars += len(paragraph.text.strip())
+        for table in doc.tables:
+            for row in table.rows:
+                row_cells = []
+                for cell in row.cells:
+                    if cell not in row_cells:
+                        row_cells.append(cell)
+                row_text = " | ".join(cell.text.strip() for cell in row_cells if cell.text.strip())
+                if row_text:
+                    total_chars += len(row_text)
+                    
+        # Estimate pages dynamically: chars_per_page = MAX_DOCX_TEXT_CHARS / MAX_PDF_PAGES
+        chars_per_page = max(1, MAX_DOCX_TEXT_CHARS // MAX_PDF_PAGES) if MAX_PDF_PAGES > 0 else 3000
+        estimated_pages = math.ceil(total_chars / chars_per_page)
+        return max(1, estimated_pages)
+        
+    return 0
+
 
 
 def autofit_worksheet(sheet, max_width=80):
@@ -1954,40 +1999,61 @@ def run_ocr():
         
     response_results = []
  
-    for file in uploaded_files:
-        raw_filename = file.filename or "untitled"
-        
-        # Check individual file size before processing/OCR
-        file.seek(0, 2)  # Seek to end
-        file_size = file.tell()
-        file.seek(0)  # Reset pointer
-        if file_size > MAX_UPLOAD_FILE_SIZE_BYTES:
-            response_results.append({
-                "filename": raw_filename,
-                "status": "error",
-                "message": "Dung lượng file vượt quá giới hạn cho phép (tối đa 10MB mỗi file)."
-            })
-            continue
-        
-        # Check extension whitelist first
-        _, ext = os.path.splitext(raw_filename.lower())
-        if ext not in ALLOWED_EXTENSIONS:
-            response_results.append({
-                "filename": raw_filename,
-                "status": "error",
-                "message": "Định dạng tệp không được hỗ trợ."
-            })
-            continue
- 
-        # Check file content signature (magic numbers)
-        if not check_file_signature(file, ext):
-            response_results.append({
-                "filename": raw_filename,
-                "status": "error",
-                "message": "Nội dung tệp không hợp lệ hoặc đã bị thay đổi phần mở rộng trái phép."
-            })
-            continue
- 
+    # Preflight phase: validate all files and estimate/sum total page counts
+    temp_files = []
+    total_pages = 0
+    
+    try:
+        for file in uploaded_files:
+            raw_filename = file.filename or "untitled"
+            
+            # Check individual file size limit
+            file.seek(0, 2)
+            file_size = file.tell()
+            file.seek(0)
+            if file_size > MAX_UPLOAD_FILE_SIZE_BYTES:
+                raise ValueError(f"Dung lượng file '{raw_filename}' vượt quá giới hạn cho phép (tối đa 10MB mỗi file).")
+                
+            # Check extension whitelist first
+            _, ext = os.path.splitext(raw_filename.lower())
+            if ext not in ALLOWED_EXTENSIONS:
+                raise ValueError(f"Định dạng tệp '{raw_filename}' không được hỗ trợ.")
+                
+            # Check file signature (magic numbers)
+            if not check_file_signature(file, ext):
+                raise ValueError(f"Nội dung tệp '{raw_filename}' không hợp lệ hoặc đã bị thay đổi phần mở rộng trái phép.")
+                
+            # Save file to a temporary file for validation and subsequent processing
+            fd, temp_path = tempfile.mkstemp()
+            with os.fdopen(fd, 'wb') as tmp:
+                file.save(tmp)
+                
+            temp_files.append((temp_path, raw_filename))
+            
+            # Preflight checks (resolutions, edges, individual PDF page counts, etc.)
+            preflight_input_file(temp_path, raw_filename)
+            
+            # Estimate/calculate page count for this file
+            file_pages = estimate_file_pages(temp_path, raw_filename)
+            total_pages += file_pages
+            
+        if total_pages > MAX_PDF_PAGES:
+            raise ValueError(f"Tổng số trang của tất cả tài liệu vượt quá giới hạn cho phép (tối đa {MAX_PDF_PAGES} trang, yêu cầu này có {total_pages} trang).")
+            
+    except ValueError as ve:
+        # Clean up all temp files created during preflight
+        for temp_path, _ in temp_files:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+        return jsonify({"error": str(ve)}), 400
+    except Exception as e:
+        for temp_path, _ in temp_files:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+        return jsonify({"error": f"Lỗi kiểm thử tệp đầu vào: {e}"}), 400
+
+    # Processing phase
+    for temp_path, raw_filename in temp_files:
         filename = secure_filename(raw_filename)
         if not filename:
             filename = f"file_{tempfile.mktemp().split('tmp')[-1]}"
@@ -1995,24 +2061,15 @@ def run_ocr():
 
         print(f"Processing uploaded file: {raw_filename} -> {filename}")
         
-        # Save file to a temporary file
-        fd, temp_path = tempfile.mkstemp()
         pdf_doc = None
         pages_text = []
         try:
-            with os.fdopen(fd, 'wb') as tmp:
-                file.save(tmp)
-
-            preflight_input_file(temp_path, filename)
             with open(storage_paths["input_path"], "wb") as stored_input:
                 with open(temp_path, "rb") as source_input:
                     stored_input.write(source_input.read())
             
             if filename.lower().endswith(".pdf"):
                 pdf_doc = pdfium.PdfDocument(temp_path)
-                num_pages = len(pdf_doc)
-                if num_pages > 20:
-                    raise ValueError(f"Tài liệu PDF vượt quá giới hạn số trang cho phép (tối đa 20 trang, file này có {num_pages} trang).")
                 
                 # Pre-render pages or check direct text to pass to threads
                 pages_to_process = []

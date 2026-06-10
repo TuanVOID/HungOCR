@@ -25,7 +25,7 @@ Flask
 pypdfium2
 python-docx
 vietocr
-paddlepaddle
+paddlepaddle==3.2.0
 paddlex[ocr-core]
 torch
 torchvision

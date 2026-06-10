@@ -115,6 +115,8 @@ MAX_DOCX_TEXT_CHARS = get_int_env("MAX_DOCX_TEXT_CHARS", 30000)
 MAX_CORRECTION_WORDS = get_int_env("MAX_CORRECTION_WORDS", 4)
 MAX_CORRECTION_CHARS = get_int_env("MAX_CORRECTION_CHARS", 35)
 OCR_REMOVE_STAMPS = get_bool_env("OCR_REMOVE_STAMPS", True)
+OCR_USE_TEXT_DETECTION_ONLY = get_bool_env("OCR_USE_TEXT_DETECTION_ONLY", True)
+OCR_RECOGNITION_BATCH = get_bool_env("OCR_RECOGNITION_BATCH", True)
 
 # Global model placeholders
 detectors = {}
@@ -283,16 +285,34 @@ def get_detector(import_type="clear"):
         mode_config = OCR_IMPORT_TYPES[import_type]
         print(f"Initializing detector for import type '{import_type}'...")
 
+        paddle_device, _ = detect_ocr_devices()
+        use_mkldnn = get_bool_env("FLAGS_use_mkldnn", False)
+
+        if OCR_USE_TEXT_DETECTION_ONLY:
+            try:
+                from paddleocr import TextDetection
+
+                detector = TextDetection(
+                    device=paddle_device,
+                    enable_mkldnn=use_mkldnn,
+                )
+                detectors[import_type] = detector
+                return detector
+            except Exception as exc:
+                print(
+                    "Warning: could not initialize TextDetection-only backend; "
+                    f"falling back to PaddleOCR full pipeline. Error: {exc}"
+                )
+
         from paddleocr import PaddleOCR
 
-        paddle_device, _ = detect_ocr_devices()
         detector_kwargs = dict(
             lang="vi",
             device=paddle_device,
             use_doc_orientation_classify=False,
             use_doc_unwarping=False,
             use_textline_orientation=True,
-            enable_mkldnn=get_bool_env("FLAGS_use_mkldnn", False),
+            enable_mkldnn=use_mkldnn,
         )
 
         try:
@@ -1964,23 +1984,45 @@ def process_image_ocr(pil_img, import_type="clear", layout_preserve=False):
                         continue
                     raw_boxes.append(sub_item[0])
 
-    page_lines = []
+    crops = []
+    crop_boxes = []
     for idx, box in enumerate(raw_boxes):
         cropped = crop_box(working_img, box, padding=3)
         if cropped is None:
             continue
+        crops.append(cropped)
+        crop_boxes.append(box)
+
+    page_lines = []
+    if OCR_RECOGNITION_BATCH and crops and hasattr(recognizer, "predict_batch"):
         try:
             with MODEL_INFERENCE_LOCK:
-                text, prob = recognizer.predict(cropped, return_prob=True)
-            text = text.strip()
-            if text:
-                page_lines.append({
-                    "text": text,
-                    "box": box,
-                    "confidence": float(prob)
-                })
+                texts, probs = recognizer.predict_batch(crops, return_prob=True)
+            for box, text, prob in zip(crop_boxes, texts, probs):
+                text = str(text or "").strip()
+                if text:
+                    page_lines.append({
+                        "text": text,
+                        "box": box,
+                        "confidence": float(prob)
+                    })
         except Exception:
-            continue
+            page_lines = []
+
+    if not page_lines:
+        for box, cropped in zip(crop_boxes, crops):
+            try:
+                with MODEL_INFERENCE_LOCK:
+                    text, prob = recognizer.predict(cropped, return_prob=True)
+                text = text.strip()
+                if text:
+                    page_lines.append({
+                        "text": text,
+                        "box": box,
+                        "confidence": float(prob)
+                    })
+            except Exception:
+                continue
             
     if layout_preserve:
         return format_layout_preserving(page_lines)

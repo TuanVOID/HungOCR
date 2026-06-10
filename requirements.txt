@@ -27,3 +27,5 @@ python-docx
 vietocr
 paddlepaddle
 paddlex
+torch
+torchvision

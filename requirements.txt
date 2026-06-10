@@ -18,3 +18,12 @@ albumentations
 # to be compatible with albumentations
 albucore
 packaging
+
+# Server API & OCR Dependencies
+python-dotenv
+Flask
+pypdfium2
+python-docx
+vietocr
+paddlepaddle
+paddlex

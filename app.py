@@ -1,4 +1,10 @@
 import os
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+
 import json
 import math
 import re
@@ -193,39 +199,50 @@ def cleanup_storage_older_than(retention_days):
                     print(f"Warning: could not remove stored folder {folder_path}: {cleanup_error}")
 
 
+import threading
+from concurrent.futures import ThreadPoolExecutor
+
+# Threading lock for safe initialization of models
+DETECTOR_LOCK = threading.Lock()
+# Global thread pool for parallel OCR / Spellcheck / LLM tasks
+OCR_MAX_WORKERS = get_int_env("OCR_MAX_WORKERS", 10)
+print(f"Setting up OCR thread pool with max_workers={OCR_MAX_WORKERS}")
+OCR_THREAD_POOL = ThreadPoolExecutor(max_workers=OCR_MAX_WORKERS)
+
 def get_detector(import_type="clear"):
     import_type = normalize_import_type(import_type)
 
-    if import_type in detectors:
-        return detectors[import_type]
+    with DETECTOR_LOCK:
+        if import_type in detectors:
+            return detectors[import_type]
 
-    mode_config = OCR_IMPORT_TYPES[import_type]
-    print(f"Initializing detector for import type '{import_type}'...")
+        mode_config = OCR_IMPORT_TYPES[import_type]
+        print(f"Initializing detector for import type '{import_type}'...")
 
-    from paddleocr import PaddleOCR
+        from paddleocr import PaddleOCR
 
-    detector_kwargs = dict(
-        lang="vi",
-        device="cpu",
-        use_doc_orientation_classify=False,
-        use_doc_unwarping=False,
-        use_textline_orientation=True,
-    )
-
-    try:
-        detector = PaddleOCR(
-            **detector_kwargs,
-            det_db_score_mode=mode_config["det_db_score_mode"],
+        detector_kwargs = dict(
+            lang="vi",
+            device="cpu",
+            use_doc_orientation_classify=False,
+            use_doc_unwarping=False,
+            use_textline_orientation=True,
         )
-    except (TypeError, ValueError):
-        print(
-            "Warning: PaddleOCR does not accept det_db_score_mode in this environment; "
-            "falling back to default detector settings."
-        )
-        detector = PaddleOCR(**detector_kwargs)
 
-    detectors[import_type] = detector
-    return detector
+        try:
+            detector = PaddleOCR(
+                **detector_kwargs,
+                det_db_score_mode=mode_config["det_db_score_mode"],
+            )
+        except (TypeError, ValueError):
+            print(
+                "Warning: PaddleOCR does not accept det_db_score_mode in this environment; "
+                "falling back to default detector settings."
+            )
+            detector = PaddleOCR(**detector_kwargs)
+
+        detectors[import_type] = detector
+        return detector
 
 def init_models():
     global recognizer
@@ -1780,6 +1797,9 @@ def is_clean_native_text(text, threshold=3):
     return False
 
 
+# Threading lock for deep learning inference execution (PaddlePaddle & PyTorch/VietOCR)
+MODEL_INFERENCE_LOCK = threading.Lock()
+
 def process_image_ocr(pil_img, import_type="clear", layout_preserve=False):
     detector = get_detector(import_type)
     working_img = pil_img.convert("RGB") if pil_img.mode != "RGB" else pil_img
@@ -1787,7 +1807,8 @@ def process_image_ocr(pil_img, import_type="clear", layout_preserve=False):
         working_img, _ = remove_stamp_regions(working_img)
 
     img_np = np.array(working_img)
-    results = detector.predict(img_np)
+    with MODEL_INFERENCE_LOCK:
+        results = detector.predict(img_np)
     
     raw_boxes = []
     if results:
@@ -1822,7 +1843,8 @@ def process_image_ocr(pil_img, import_type="clear", layout_preserve=False):
         if cropped is None:
             continue
         try:
-            text, prob = recognizer.predict(cropped, return_prob=True)
+            with MODEL_INFERENCE_LOCK:
+                text, prob = recognizer.predict(cropped, return_prob=True)
             text = text.strip()
             if text:
                 page_lines.append({
@@ -1967,29 +1989,53 @@ def run_ocr():
                 num_pages = len(pdf_doc)
                 if num_pages > 20:
                     raise ValueError(f"Tài liệu PDF vượt quá giới hạn số trang cho phép (tối đa 20 trang, file này có {num_pages} trang).")
+                
+                # Pre-render pages or check direct text to pass to threads
+                pages_to_process = []
                 for i, page in enumerate(pdf_doc):
-                    # Try to extract text directly from PDF page first
                     textpage = page.get_textpage()
                     extracted_text = textpage.get_text_bounded().strip()
-                    
                     if is_clean_native_text(extracted_text):
-                        print(f"Page {i+1}: Detected clean native text. Using direct extraction (fast path).")
-                        text = extracted_text
+                        pages_to_process.append((i + 1, "text", extracted_text))
                     else:
-                        print(f"Page {i+1}: Scanned page or garbled text. Rendering and running image OCR.")
                         bitmap = page.render(scale=2.0)
-                        pil_img = bitmap.to_pil()
-                        text = process_image_ocr(pil_img, import_type=import_type, layout_preserve=layout_preserve)
+                        pages_to_process.append((i + 1, "image", bitmap.to_pil()))
+
+                # Define processing worker function for a single page
+                def process_single_page(page_info):
+                    page_num, page_type, content = page_info
+                    try:
+                        if page_type == "text":
+                            print(f"Page {page_num}: Detected clean native text (Thread). Using direct extraction.")
+                            text = content
+                        else:
+                            print(f"Page {page_num}: Scanned page or garbled text (Thread). Running image OCR.")
+                            text = process_image_ocr(content, import_type=import_type, layout_preserve=layout_preserve)
                         
-                    llm_result = apply_ocr_spellcheck(text, source_name=raw_filename, page_number=i + 1) if llm_postprocess else None
-                    pages_text.append({
-                        "page_number": i + 1,
-                        "text": llm_result["text"] if llm_result else text,
-                        **({"raw_text": text} if llm_postprocess else {}),
-                        **({"llm_status": llm_result["status"]} if llm_result else {}),
-                        **({"llm_corrections": llm_result.get("corrections", [])} if llm_result else {}),
-                        **({"llm_error": llm_result.get("error")} if llm_result and llm_result.get("error") else {}),
-                    })
+                        llm_result = apply_ocr_spellcheck(text, source_name=raw_filename, page_number=page_num) if llm_postprocess else None
+                        return {
+                            "page_number": page_num,
+                            "text": llm_result["text"] if llm_result else text,
+                            **({"raw_text": text} if llm_postprocess else {}),
+                            **({"llm_status": llm_result["status"]} if llm_result else {}),
+                            **({"llm_corrections": llm_result.get("corrections", [])} if llm_result else {}),
+                            **({"llm_error": llm_result.get("error")} if llm_result and llm_result.get("error") else {}),
+                        }
+                    except Exception as page_exc:
+                        print(f"Error processing page {page_num}: {page_exc}")
+                        return {
+                            "page_number": page_num,
+                            "text": f"Lỗi xử lý trang {page_num}: {page_exc}",
+                            "error": str(page_exc)
+                        }
+
+                # Submit all pages to thread pool concurrently
+                futures = [OCR_THREAD_POOL.submit(process_single_page, p) for p in pages_to_process]
+                for f in futures:
+                    pages_text.append(f.result())
+                
+                # Make sure pages are sorted by page_number
+                pages_text.sort(key=lambda x: x["page_number"])
             elif filename.lower().endswith(".docx"):
                 text = process_docx_text(temp_path)
                 llm_result = apply_ocr_spellcheck(text, source_name=raw_filename, page_number=1) if llm_postprocess else None

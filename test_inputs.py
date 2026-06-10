@@ -38,7 +38,7 @@ def create_test_docx(filename="test_docx.docx"):
         raise e
 
 def test_ocr_endpoint():
-    base_url = "http://127.0.0.1:5000"
+    base_url = "http://127.0.0.1:8092"
     ocr_url = f"{base_url}/ocr"
     health_url = f"{base_url}/health"
     

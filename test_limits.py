@@ -47,7 +47,7 @@ def generate_heavy_file(filename="limit_test_heavy.docx"):
     print("Heavy file created.")
 
 def run_limit_tests():
-    base_url = "http://127.0.0.1:5000"
+    base_url = "http://127.0.0.1:8092"
     ocr_url = f"{base_url}/ocr"
     
     test_cases = {

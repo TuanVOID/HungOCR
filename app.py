@@ -4,6 +4,8 @@ os.environ["MKL_NUM_THREADS"] = "1"
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
 os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
 os.environ["NUMEXPR_NUM_THREADS"] = "1"
+os.environ["FLAGS_use_mkldnn"] = "0"
+os.environ["FLAGS_use_onednn"] = "0"
 
 import json
 import math
@@ -227,6 +229,7 @@ def get_detector(import_type="clear"):
             use_doc_orientation_classify=False,
             use_doc_unwarping=False,
             use_textline_orientation=True,
+            enable_mkldnn=False,
         )
 
         try:

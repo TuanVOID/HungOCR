@@ -15,7 +15,7 @@ load_dotenv() # Load environmental variables from .env
 import cv2
 import numpy as np
 from PIL import Image
-from flask import Flask, request, jsonify, render_template, send_file
+from flask import Flask, request, jsonify, render_template, send_file, redirect, url_for
 import pypdfium2 as pdfium
 import requests
 from openpyxl import Workbook
@@ -1883,9 +1883,13 @@ def health():
     })
 
 
-@app.route('/', methods=['GET'])
+@app.route('/ui', methods=['GET'])
 def index():
     return render_template('index.html')
+
+@app.route('/', methods=['GET'])
+def redirect_to_ui():
+    return redirect(url_for('index'))
 
 @app.route('/ocr', methods=['POST'])
 def run_ocr():
@@ -2132,5 +2136,6 @@ def export_summary_xlsx():
     )
 
 if __name__ == '__main__':
-    # Run on local port 5000
-    app.run(host='0.0.0.0', port=5000, debug=False)
+    # Run on local port configured in env
+    port = get_int_env("PORT", 5000)
+    app.run(host='0.0.0.0', port=port, debug=False)

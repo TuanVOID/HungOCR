@@ -14,7 +14,29 @@ from urllib.request import urlopen
 ROOT_DIR = Path(__file__).resolve().parent
 APP_FILE = ROOT_DIR / "app.py"
 LOCAL_VENV_PYTHON = ROOT_DIR / ".venv" / "Scripts" / "python.exe"
-DEFAULT_BASE_URL = os.getenv("OCR_BASE_URL", "http://127.0.0.1:5000")
+
+# Load environment variables from .env
+def load_env():
+    env_file = ROOT_DIR / ".env"
+    if env_file.exists():
+        try:
+            from dotenv import load_dotenv
+            load_dotenv(env_file)
+        except ImportError:
+            with open(env_file, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        key, val = line.split("=", 1)
+                        val_str = val.strip()
+                        if len(val_str) >= 2 and val_str[0] == val_str[-1] and val_str[0] in ('"', "'"):
+                            val_str = val_str[1:-1]
+                        os.environ[key.strip()] = val_str
+
+load_env()
+
+PORT = os.getenv("PORT", "5000")
+DEFAULT_BASE_URL = os.getenv("OCR_BASE_URL", f"http://127.0.0.1:{PORT}")
 DEFAULT_HEALTH_URL = os.getenv("OCR_HEALTH_URL", f"{DEFAULT_BASE_URL}/health")
 STARTUP_TIMEOUT_SECONDS = int(os.getenv("OCR_STARTUP_TIMEOUT_SECONDS", "120"))
 

@@ -1,11 +1,26 @@
 import os
-os.environ["OMP_NUM_THREADS"] = "1"
-os.environ["MKL_NUM_THREADS"] = "1"
-os.environ["OPENBLAS_NUM_THREADS"] = "1"
-os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
-os.environ["NUMEXPR_NUM_THREADS"] = "1"
-os.environ["FLAGS_use_mkldnn"] = "0"
-os.environ["FLAGS_use_onednn"] = "0"
+from dotenv import load_dotenv
+load_dotenv() # Load environmental variables from .env
+
+# Configure thread limits for computational libraries (OMP, MKL, OpenBLAS, etc.)
+# If empty or not set in .env, we don't set/override them, allowing native CPU auto-detection.
+for env_var in ["OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "NUMEXPR_NUM_THREADS"]:
+    val = os.getenv(env_var)
+    if val is not None and val.strip() != "":
+        os.environ[env_var] = val.strip()
+    else:
+        # If it was pre-set in os.environ, we keep it, otherwise we pop it to let libraries auto-detect
+        if env_var in os.environ and os.getenv(env_var) == "":
+            os.environ.pop(env_var, None)
+
+# Configure hardware CPU acceleration for PaddlePaddle
+for env_var in ["FLAGS_use_mkldnn", "FLAGS_use_onednn"]:
+    val = os.getenv(env_var)
+    if val is not None and val.strip() != "":
+        os.environ[env_var] = val.strip()
+    else:
+        os.environ[env_var] = "1" # Default to enabled for speed
+
 
 import json
 import math
@@ -17,8 +32,7 @@ import uuid
 from datetime import date, datetime, timedelta
 from io import BytesIO
 
-from dotenv import load_dotenv
-load_dotenv() # Load environmental variables from .env
+
 
 import cv2
 import numpy as np
@@ -236,7 +250,7 @@ def get_detector(import_type="clear"):
             use_doc_orientation_classify=False,
             use_doc_unwarping=False,
             use_textline_orientation=True,
-            enable_mkldnn=False,
+            enable_mkldnn=get_bool_env("FLAGS_use_mkldnn", True),
         )
 
         try:
@@ -1584,7 +1598,7 @@ def build_llm_structured_sheet(workbook, response_results):
             llm_result = call_ollama_structured_table(filename, full_file_text)
             
             # The new structured prompt returns a dict with "tables": [...]
-            tables = llm_result.get("tables", [])
+            tables = llm_result.get("tables")
             if not isinstance(tables, list):
                 # Fallback to single table if LLM returned old schema
                 if isinstance(llm_result.get("headers"), list):
@@ -2016,10 +2030,10 @@ def run_ocr():
                     page_num, page_type, content = page_info
                     try:
                         if page_type == "text":
-                            print(f"Page {page_num}: Detected clean native text (Thread). Using direct extraction.")
+                            print(f"Page {page_num}: Detected clean native text. Using direct extraction.")
                             text = content
                         else:
-                            print(f"Page {page_num}: Scanned page or garbled text (Thread). Running image OCR.")
+                            print(f"Page {page_num}: Scanned page or garbled text. Running image OCR.")
                             text = process_image_ocr(content, import_type=import_type, layout_preserve=layout_preserve)
                         
                         llm_result = apply_ocr_spellcheck(text, source_name=raw_filename, page_number=page_num) if llm_postprocess else None
@@ -2039,10 +2053,9 @@ def run_ocr():
                             "error": str(page_exc)
                         }
 
-                # Submit all pages to thread pool concurrently
-                futures = [OCR_THREAD_POOL.submit(process_single_page, p) for p in pages_to_process]
-                for f in futures:
-                    pages_text.append(f.result())
+                # Process all pages sequentially to leverage native multi-core acceleration and avoid lock contention
+                for p in pages_to_process:
+                    pages_text.append(process_single_page(p))
                 
                 # Make sure pages are sorted by page_number
                 pages_text.sort(key=lambda x: x["page_number"])

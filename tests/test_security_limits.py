@@ -61,7 +61,7 @@ class TestSecurityLimits(unittest.TestCase):
             with self.assertRaises(ValueError) as context:
                 preflight_input_file("sample.png", "sample.png")
 
-        self.assertIn("áº¢nh", str(context.exception))
+        self.assertIn("Ảnh", str(context.exception))
             
     def test_normalize_cell_value_formula_injection(self):
         # Safe string
@@ -94,19 +94,19 @@ class TestSecurityLimits(unittest.TestCase):
     def test_process_docx_text(self):
         import docx
         doc = docx.Document()
-        doc.add_paragraph("ÄÃ¢y lÃ  Ä‘oáº¡n vÄƒn báº£n test Word.")
+        doc.add_paragraph("Đây là đoạn văn bản test Word.")
         table = doc.add_table(rows=1, cols=2)
         row = table.rows[0]
-        row.cells[0].text = "Cá»™t 1"
-        row.cells[1].text = "Cá»™t 2"
+        row.cells[0].text = "Cột 1"
+        row.cells[1].text = "Cột 2"
         
         test_path = "test_temp_docx.docx"
         doc.save(test_path)
         
         try:
             extracted_text = process_docx_text(test_path)
-            self.assertIn("ÄÃ¢y lÃ  Ä‘oáº¡n vÄƒn báº£n test Word.", extracted_text)
-            self.assertIn("Cá»™t 1 | Cá»™t 2", extracted_text)
+            self.assertIn("Đây là đoạn văn bản test Word.", extracted_text)
+            self.assertIn("Cột 1 | Cột 2", extracted_text)
         finally:
             if os.path.exists(test_path):
                 os.remove(test_path)
@@ -122,7 +122,7 @@ class TestSecurityLimits(unittest.TestCase):
         try:
             with self.assertRaises(ValueError) as context:
                 process_docx_text(test_path)
-            self.assertIn("vÆ°á»£t quÃ¡ giá»›i háº¡n kÃ½ tá»±", str(context.exception))
+            self.assertIn("vượt quá giới hạn ký tự", str(context.exception))
         finally:
             if os.path.exists(test_path):
                 os.remove(test_path)
@@ -132,25 +132,27 @@ class TestSecurityLimits(unittest.TestCase):
         from openpyxl import Workbook
         from app import build_llm_structured_sheet
         
-        # Configure mock return values
-        mock_call.side_effect = [
-            {
-                "title": "HÃ³a Ä‘Æ¡n mua hÃ ng",
-                "headers": ["TÃªn sáº£n pháº©m", "Sá»‘ lÆ°á»£ng", "ÄÆ¡n giÃ¡"],
-                "rows": [
-                    {"TÃªn sáº£n pháº©m": "BÃºt bi", "Sá»‘ lÆ°á»£ng": "10", "ÄÆ¡n giÃ¡": "5000"},
-                    {"TÃªn sáº£n pháº©m": "Sá»• tay", "Sá»‘ lÆ°á»£ng": "2", "ÄÆ¡n giÃ¡": "25000"}
-                ]
-            },
-            {
-                "title": "ThÃ´ng tin nhÃ¢n sá»±",
-                "headers": ["TrÆ°á»ng thÃ´ng tin", "GiÃ¡ trá»‹"],
-                "rows": [
-                    {"TrÆ°á»ng thÃ´ng tin": "Há» vÃ  tÃªn", "GiÃ¡ trá»‹": "Nguyá»…n VÄƒn A"},
-                    {"TrÆ°á»ng thÃ´ng tin": "Chá»©c vá»¥", "GiÃ¡ trá»‹": "NhÃ¢n viÃªn"}
-                ]
-            }
-        ]
+        # Configure mock return values using the new multi-table format
+        mock_call.return_value = {
+            "tables": [
+                {
+                    "name": "Hóa đơn mua hàng",
+                    "headers": ["Tên sản phẩm", "Số lượng", "Đơn giá"],
+                    "rows": [
+                        {"Tên sản phẩm": "Bút bi", "Số lượng": "10", "Đơn giá": "5000"},
+                        {"Tên sản phẩm": "Sổ tay", "Số lượng": "2", "Đơn giá": "25000"}
+                    ]
+                },
+                {
+                    "name": "Thông tin nhân sự",
+                    "headers": ["Trường thông tin", "Giá trị"],
+                    "rows": [
+                        {"Trường thông tin": "Họ và tên", "Giá trị": "Nguyễn Văn A"},
+                        {"Trường thông tin": "Chức vụ", "Giá trị": "Nhân viên"}
+                    ]
+                }
+            ]
+        }
         
         wb = Workbook()
         wb.remove(wb.active) # Remove default sheet
@@ -169,20 +171,20 @@ class TestSecurityLimits(unittest.TestCase):
         build_llm_structured_sheet(wb, mock_results)
         
         # Verify sheets were created successfully
-        self.assertIn("HÃ³a Ä‘Æ¡n mua hÃ ng", wb.sheetnames)
-        self.assertIn("ThÃ´ng tin nhÃ¢n sá»±", wb.sheetnames)
+        self.assertIn("Hóa đơn mua hàng", wb.sheetnames)
+        self.assertIn("Thông tin nhân sự", wb.sheetnames)
         
-        # Verify content of "HÃ³a Ä‘Æ¡n mua hÃ ng"
-        sheet1 = wb["HÃ³a Ä‘Æ¡n mua hÃ ng"]
-        # Row 1 headers: File, Page, TÃªn sáº£n pháº©m, Sá»‘ lÆ°á»£ng, ÄÆ¡n giÃ¡
-        self.assertEqual([c.value for c in sheet1[1]], ["File", "Page", "TÃªn sáº£n pháº©m", "Sá»‘ lÆ°á»£ng", "ÄÆ¡n giÃ¡"])
-        # Row 2 data: document.pdf, 1, BÃºt bi, 10, 5000
-        self.assertEqual([c.value for c in sheet1[2]], ["document.pdf", 1, "BÃºt bi", "10", "5000"])
+        # Verify content of "Hóa đơn mua hàng"
+        sheet1 = wb["Hóa đơn mua hàng"]
+        # Row 1 headers: Tên file, Tên sản phẩm, Số lượng, Đơn giá
+        self.assertEqual([c.value for c in sheet1[1]], ["Tên file", "Tên sản phẩm", "Số lượng", "Đơn giá"])
+        # Row 2 data: document.pdf, Bút bi, 10, 5000
+        self.assertEqual([c.value for c in sheet1[2]], ["document.pdf", "Bút bi", "10", "5000"])
         
-        # Verify content of "ThÃ´ng tin nhÃ¢n sá»±"
-        sheet2 = wb["ThÃ´ng tin nhÃ¢n sá»±"]
-        self.assertEqual([c.value for c in sheet2[1]], ["File", "Page", "TrÆ°á»ng thÃ´ng tin", "GiÃ¡ trá»‹"])
-        self.assertEqual([c.value for c in sheet2[2]], ["document.pdf", 2, "Há» vÃ  tÃªn", "Nguyá»…n VÄƒn A"])
+        # Verify content of "Thông tin nhân sự"
+        sheet2 = wb["Thông tin nhân sự"]
+        self.assertEqual([c.value for c in sheet2[1]], ["Tên file", "Trường thông tin", "Giá trị"])
+        self.assertEqual([c.value for c in sheet2[2]], ["document.pdf", "Họ và tên", "Nguyễn Văn A"])
 
     @unittest.mock.patch('app.requests.post')
     def test_call_ollama_structured_table_payload_limits(self, mock_post):
@@ -191,7 +193,7 @@ class TestSecurityLimits(unittest.TestCase):
         mock_response = unittest.mock.Mock()
         mock_response.json.return_value = {
             "message": {
-                "content": '{"title":"Báº£ng","headers":["Cá»™t 1"],"rows":[{"Cá»™t 1":"GiÃ¡ trá»‹"}],"notes":""}'
+                "content": '{"title":"Bảng","headers":["Cột 1"],"rows":[{"Cột 1":"Giá trị"}],"notes":""}'
             }
         }
         mock_response.raise_for_status.return_value = None
@@ -200,7 +202,7 @@ class TestSecurityLimits(unittest.TestCase):
         long_text = "X" * 7000
         result = call_ollama_structured_table("sample.pdf", long_text)
 
-        self.assertEqual(result["title"], "Báº£ng")
+        self.assertEqual(result["title"], "Bảng")
         _, kwargs = mock_post.call_args
         payload = kwargs["json"]
         self.assertIn("think", payload)
@@ -225,13 +227,13 @@ class TestSecurityLimits(unittest.TestCase):
     def test_call_ollama_ocr_spellcheck_payload(self, mock_post):
         mock_response = unittest.mock.Mock()
         mock_response.json.return_value = {
-            "response": '{"corrections":[{"wrong":"Xin chao","correct":"Xin chÃ o"}]}'
+            "response": '{"corrections":[{"wrong":"Xin chao","correct":"Xin chào"}]}'
         }
         mock_response.raise_for_status.return_value = None
         mock_post.return_value = mock_response
 
         result = call_ollama_ocr_spellcheck("Xin chao")
-        self.assertEqual(result["corrections"], [{"wrong": "Xin chao", "correct": "Xin chÃ o"}])
+        self.assertEqual(result["corrections"], [{"wrong": "Xin chao", "correct": "Xin chào"}])
 
         _, kwargs = mock_post.call_args
         self.assertTrue(kwargs["json"]["stream"] is False)
@@ -250,7 +252,7 @@ class TestSecurityLimits(unittest.TestCase):
 
         second_response = unittest.mock.Mock()
         second_response.json.return_value = {
-            "response": '{"corrections":[{"wrong":"Xin chao","correct":"Xin chÃ o"}]}'
+            "response": '{"corrections":[{"wrong":"Xin chao","correct":"Xin chào"}]}'
         }
         second_response.raise_for_status.return_value = None
 
@@ -258,7 +260,7 @@ class TestSecurityLimits(unittest.TestCase):
 
         result = call_ollama_ocr_spellcheck("Xin chao")
 
-        self.assertEqual(result["corrections"], [{"wrong": "Xin chao", "correct": "Xin chÃ o"}])
+        self.assertEqual(result["corrections"], [{"wrong": "Xin chao", "correct": "Xin chào"}])
         self.assertEqual(mock_post.call_count, 2)
 
     @unittest.mock.patch('app.call_ollama_ocr_spellcheck')
@@ -283,20 +285,20 @@ class TestSecurityLimits(unittest.TestCase):
     def test_apply_ocr_spellcheck_applies_corrections_only(self, mock_call):
         mock_call.return_value = {
             "corrections": [
-                {"wrong": "Xin chao", "correct": "Xin chÃ o"},
-                {"wrong": "hop dong", "correct": "há»£p Ä‘á»“ng"},
+                {"wrong": "Xin chao", "correct": "Xin chào"},
+                {"wrong": "hop dong", "correct": "hợp đồng"},
             ]
         }
 
         result = apply_ocr_spellcheck("Xin chao ve hop dong nay.", source_name="sample.pdf", page_number=1)
 
         self.assertEqual(result["status"], "success")
-        self.assertEqual(result["text"], "Xin chÃ o ve há»£p Ä‘á»“ng nay.")
+        self.assertEqual(result["text"], "Xin chào ve hợp đồng nay.")
         self.assertEqual(
             result["corrections"],
             [
-                {"wrong": "Xin chao", "correct": "Xin chÃ o", "replaced_count": 1},
-                {"wrong": "hop dong", "correct": "há»£p Ä‘á»“ng", "replaced_count": 1},
+                {"wrong": "Xin chao", "correct": "Xin chào", "replaced_count": 1},
+                {"wrong": "hop dong", "correct": "hợp đồng", "replaced_count": 1},
             ],
         )
 
@@ -305,26 +307,26 @@ class TestSecurityLimits(unittest.TestCase):
         updated_text, applied = apply_ocr_corrections(
             text,
             [
-                {"wrong": "Xin chao", "correct": "Xin chÃ o"},
-                {"wrong": "hop dong", "correct": "há»£p Ä‘á»“ng"},
+                {"wrong": "Xin chao", "correct": "Xin chào"},
+                {"wrong": "hop dong", "correct": "hợp đồng"},
                 {"wrong": "2026", "correct": "2025"},
                 {"wrong": "https://example.com", "correct": "https://example.org"},
-                {"wrong": "Äá»˜C Láº¬P Tá»° DO - Háº NH PHÃšC", "correct": "Äá»™c láº­p - Tá»± do - Háº¡nh phÃºc"},
+                {"wrong": "ĐỘC LẬP TỰ DO - HẠNH PHÚC", "correct": "Độc lập - Tự do - Hạnh phúc"},
             ],
         )
 
-        self.assertEqual(updated_text, "Xin chÃ o ve há»£p Ä‘á»“ng nay. 2026 va https://example.com")
+        self.assertEqual(updated_text, "Xin chào ve hợp đồng nay. 2026 va https://example.com")
         self.assertEqual(
             applied,
             [
-                {"wrong": "Xin chao", "correct": "Xin chÃ o", "replaced_count": 1},
-                {"wrong": "hop dong", "correct": "há»£p Ä‘á»“ng", "replaced_count": 1},
+                {"wrong": "Xin chao", "correct": "Xin chào", "replaced_count": 1},
+                {"wrong": "hop dong", "correct": "hợp đồng", "replaced_count": 1},
             ],
         )
 
     def test_relaxed_scoring_normalizes_case_and_punctuation(self):
-        left = "Äá»˜C Láº¬P Tá»° DO - Háº NH PHÃšC"
-        right = "Äá»™c láº­p tá»± do- háº¡nh phÃºc"
+        left = "ĐỘC LẬP TỰ DO - HẠNH PHÚC"
+        right = "Độc lập tự do- hạnh phúc"
         self.assertEqual(normalize_for_scoring(left), normalize_for_scoring(right))
 
     def test_import_type_aliases_fold_complex_into_clear(self):

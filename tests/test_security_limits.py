@@ -6,7 +6,7 @@ import os
 # Add root folder to sys.path so we can import app
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app import split_text_into_chunks, check_file_signature, normalize_cell_value, process_docx_text, trim_text_for_llm, get_int_env, preflight_input_file, estimate_file_pages, build_ocr_spellcheck_prompt, call_ollama_ocr_spellcheck, apply_ocr_spellcheck, apply_ocr_corrections, normalize_import_type, OCR_IMPORT_TYPES
+from app_backend import split_text_into_chunks, check_file_signature, normalize_cell_value, process_docx_text, trim_text_for_llm, get_int_env, preflight_input_file, estimate_file_pages, build_ocr_spellcheck_prompt, call_ollama_ocr_spellcheck, apply_ocr_spellcheck, apply_ocr_corrections, normalize_import_type, OCR_IMPORT_TYPES
 from tools.benchmark_thuvienphapluat_legal_ocr import normalize_for_scoring
 
 class TestSecurityLimits(unittest.TestCase):
@@ -39,25 +39,26 @@ class TestSecurityLimits(unittest.TestCase):
         with unittest.mock.patch.dict(os.environ, {"TEST_INT_ENV": "invalid"}, clear=False):
             self.assertEqual(get_int_env("TEST_INT_ENV", 123), 123)
 
-    @unittest.mock.patch('app.pdfium.PdfDocument')
+    @unittest.mock.patch('app_backend.pdfium.PdfDocument')
     def test_preflight_input_file_pdf_limit(self, mock_pdf_document):
         mock_pdf = unittest.mock.MagicMock()
         mock_pdf.__len__.return_value = 21
         mock_pdf_document.return_value = mock_pdf
 
-        with self.assertRaises(ValueError) as context:
-            preflight_input_file("sample.pdf", "sample.pdf")
+        with unittest.mock.patch('app_backend.MAX_PDF_PAGES', 10):
+            with self.assertRaises(ValueError) as context:
+                preflight_input_file("sample.pdf", "sample.pdf")
 
         self.assertIn("PDF", str(context.exception))
         mock_pdf.close.assert_called()
 
-    @unittest.mock.patch('app.Image.open')
+    @unittest.mock.patch('app_backend.Image.open')
     def test_preflight_input_file_image_limit(self, mock_image_open):
         mock_img = unittest.mock.MagicMock()
         mock_img.size = (200, 200)
         mock_image_open.return_value.__enter__.return_value = mock_img
 
-        with unittest.mock.patch('app.MAX_IMAGE_PIXELS', 10000), unittest.mock.patch('app.MAX_IMAGE_EDGE', 1000):
+        with unittest.mock.patch('app_backend.MAX_IMAGE_PIXELS', 10000), unittest.mock.patch('app_backend.MAX_IMAGE_EDGE', 1000):
             with self.assertRaises(ValueError) as context:
                 preflight_input_file("sample.png", "sample.png")
 
@@ -120,17 +121,18 @@ class TestSecurityLimits(unittest.TestCase):
         doc.save(test_path)
         
         try:
-            with self.assertRaises(ValueError) as context:
-                process_docx_text(test_path)
-            self.assertIn("vượt quá giới hạn ký tự", str(context.exception))
+            with unittest.mock.patch('app_backend.MAX_DOCX_TEXT_CHARS', 30000):
+                with self.assertRaises(ValueError) as context:
+                    process_docx_text(test_path)
+                self.assertIn("vượt quá giới hạn ký tự", str(context.exception))
         finally:
             if os.path.exists(test_path):
                 os.remove(test_path)
 
-    @unittest.mock.patch('app.call_ollama_structured_table')
+    @unittest.mock.patch('app_backend.call_ollama_structured_table')
     def test_build_llm_structured_sheet(self, mock_call):
         from openpyxl import Workbook
-        from app import build_llm_structured_sheet
+        from app_backend import build_llm_structured_sheet
         
         # Configure mock return values using the new multi-table format
         mock_call.return_value = {
@@ -186,9 +188,9 @@ class TestSecurityLimits(unittest.TestCase):
         self.assertEqual([c.value for c in sheet2[1]], ["Tên file", "Trường thông tin", "Giá trị"])
         self.assertEqual([c.value for c in sheet2[2]], ["document.pdf", "Họ và tên", "Nguyễn Văn A"])
 
-    @unittest.mock.patch('app.requests.post')
+    @unittest.mock.patch('app_backend.requests.post')
     def test_call_ollama_structured_table_payload_limits(self, mock_post):
-        from app import call_ollama_structured_table
+        from app_backend import call_ollama_structured_table
 
         mock_response = unittest.mock.Mock()
         mock_response.json.return_value = {
@@ -223,7 +225,7 @@ class TestSecurityLimits(unittest.TestCase):
         self.assertIn("Xin chao", prompt)
         self.assertNotIn("clean_text", prompt)
 
-    @unittest.mock.patch('app.requests.post')
+    @unittest.mock.patch('app_backend.requests.post')
     def test_call_ollama_ocr_spellcheck_payload(self, mock_post):
         mock_response = unittest.mock.Mock()
         mock_response.json.return_value = {
@@ -244,7 +246,7 @@ class TestSecurityLimits(unittest.TestCase):
         self.assertEqual(kwargs["json"]["format"]["required"], ["corrections"])
         self.assertNotIn("clean_text", kwargs["json"]["prompt"])
 
-    @unittest.mock.patch('app.requests.post')
+    @unittest.mock.patch('app_backend.requests.post')
     def test_call_ollama_ocr_spellcheck_retries_once_on_invalid_json(self, mock_post):
         first_response = unittest.mock.Mock()
         first_response.json.return_value = {"response": "not valid json"}
@@ -263,7 +265,7 @@ class TestSecurityLimits(unittest.TestCase):
         self.assertEqual(result["corrections"], [{"wrong": "Xin chao", "correct": "Xin chào"}])
         self.assertEqual(mock_post.call_count, 2)
 
-    @unittest.mock.patch('app.call_ollama_ocr_spellcheck')
+    @unittest.mock.patch('app_backend.call_ollama_ocr_spellcheck')
     def test_apply_ocr_spellcheck_chunks_large_text(self, mock_call):
         def _side_effect(chunk, chunk_index=None, chunk_total=None):
             self.assertLessEqual(len(chunk), 6000)
@@ -281,7 +283,7 @@ class TestSecurityLimits(unittest.TestCase):
         self.assertEqual(mock_call.call_count, 4)
         self.assertEqual([len(call.args[0]) for call in mock_call.call_args_list], [6000, 6000, 6000, 2000])
 
-    @unittest.mock.patch('app.call_ollama_ocr_spellcheck')
+    @unittest.mock.patch('app_backend.call_ollama_ocr_spellcheck')
     def test_apply_ocr_spellcheck_applies_corrections_only(self, mock_call):
         mock_call.return_value = {
             "corrections": [
@@ -340,7 +342,7 @@ class TestSecurityLimits(unittest.TestCase):
         self.assertEqual(estimate_file_pages("dummy_path.png", "dummy_path.png"), 1)
         self.assertEqual(estimate_file_pages("dummy_path.jpg", "dummy_path.jpg"), 1)
 
-    @unittest.mock.patch('app.pdfium.PdfDocument')
+    @unittest.mock.patch('app_backend.pdfium.PdfDocument')
     def test_estimate_file_pages_pdf(self, mock_pdf_document):
         mock_pdf = unittest.mock.MagicMock()
         mock_pdf.__len__.return_value = 5
@@ -362,8 +364,26 @@ class TestSecurityLimits(unittest.TestCase):
         mock_docx_document.return_value = mock_doc
 
         # 5000 / 3000 = 1.66 -> ceil to 2 pages
-        pages = estimate_file_pages("sample.docx", "sample.docx")
-        self.assertEqual(pages, 2)
+        with unittest.mock.patch('app_backend.MAX_DOCX_TEXT_CHARS', 30000), \
+             unittest.mock.patch('app_backend.MAX_PDF_PAGES', 10):
+            pages = estimate_file_pages("sample.docx", "sample.docx")
+            self.assertEqual(pages, 2)
+
+    def test_gpu_dynamic_preflight_limits(self):
+        import app_backend
+        # Test default/CPU mode configuration
+        with unittest.mock.patch('app_backend.IS_GPU_MODE', False), \
+             unittest.mock.patch('app_backend.MAX_PDF_PAGES', 20), \
+             unittest.mock.patch('app_backend.MAX_UPLOAD_FILE_SIZE_BYTES', 10485760):
+            self.assertEqual(app_backend.MAX_PDF_PAGES, 20)
+            self.assertEqual(app_backend.MAX_UPLOAD_FILE_SIZE_BYTES, 10485760)
+
+        # Test GPU mode configuration
+        with unittest.mock.patch('app_backend.IS_GPU_MODE', True), \
+             unittest.mock.patch('app_backend.MAX_PDF_PAGES', 200), \
+             unittest.mock.patch('app_backend.MAX_UPLOAD_FILE_SIZE_BYTES', 104857600):
+            self.assertEqual(app_backend.MAX_PDF_PAGES, 200)
+            self.assertEqual(app_backend.MAX_UPLOAD_FILE_SIZE_BYTES, 104857600)
 
 if __name__ == '__main__':
     unittest.main()

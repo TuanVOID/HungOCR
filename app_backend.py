@@ -107,12 +107,48 @@ SUMMARY_LLM_TIMEOUT_SECONDS = get_int_env("SUMMARY_LLM_TIMEOUT_SECONDS", OCR_LLM
 SUMMARY_LLM_CHUNK_MAX_CHARS = get_int_env("SUMMARY_LLM_CHUNK_MAX_CHARS", 6000)
 SUMMARY_LLM_INPUT_MAX_CHARS = get_int_env("SUMMARY_LLM_INPUT_MAX_CHARS", 6000)
 SUMMARY_LLM_OUTPUT_MAX_TOKENS = get_int_env("SUMMARY_LLM_OUTPUT_MAX_TOKENS", 1200)
-MAX_UPLOAD_FILE_SIZE_BYTES = get_int_env("MAX_UPLOAD_FILE_SIZE_BYTES", 10 * 1024 * 1024)
-MAX_PDF_PAGES = get_int_env("MAX_PDF_PAGES", 10)
-MAX_IMAGE_PIXELS = get_int_env("MAX_IMAGE_PIXELS", 20_000_000)
-MAX_IMAGE_EDGE = get_int_env("MAX_IMAGE_EDGE", 12000)
-MAX_DOCX_TEXT_CHARS = get_int_env("MAX_DOCX_TEXT_CHARS", 30000)
+def is_gpu_enabled():
+    env_device = os.getenv("OCR_DEVICE", "auto").strip().lower()
+    if env_device == "gpu":
+        return True
+    elif env_device == "cpu":
+        return False
+    else:  # auto
+        try:
+            import torch
+            if torch.cuda.is_available():
+                return True
+        except ImportError:
+            pass
+        try:
+            import paddle
+            if paddle.is_compiled_with_cuda() and paddle.device.cuda.device_count() > 0:
+                return True
+        except ImportError:
+            pass
+        return False
+
+
+IS_GPU_MODE = is_gpu_enabled()
+
+if IS_GPU_MODE:
+    MAX_UPLOAD_FILE_SIZE_BYTES = get_int_env("MAX_UPLOAD_FILE_SIZE_BYTES_GPU", 100 * 1024 * 1024)
+    MAX_PDF_PAGES = get_int_env("MAX_PDF_PAGES_GPU", 200)
+    MAX_IMAGE_PIXELS = get_int_env("MAX_IMAGE_PIXELS_GPU", 80_000_000)
+    MAX_IMAGE_EDGE = get_int_env("MAX_IMAGE_EDGE_GPU", 30000)
+    MAX_DOCX_TEXT_CHARS = get_int_env("MAX_DOCX_TEXT_CHARS_GPU", 600000)
+else:
+    MAX_UPLOAD_FILE_SIZE_BYTES = get_int_env("MAX_UPLOAD_FILE_SIZE_BYTES", 10 * 1024 * 1024)
+    MAX_PDF_PAGES = get_int_env("MAX_PDF_PAGES", 20)
+    MAX_IMAGE_PIXELS = get_int_env("MAX_IMAGE_PIXELS", 20_000_000)
+    MAX_IMAGE_EDGE = get_int_env("MAX_IMAGE_EDGE", 12000)
+    MAX_DOCX_TEXT_CHARS = get_int_env("MAX_DOCX_TEXT_CHARS", 60000)
+
+app.config["MAX_CONTENT_LENGTH"] = max(15 * 1024 * 1024, MAX_UPLOAD_FILE_SIZE_BYTES + 5 * 1024 * 1024)
+
 MAX_CORRECTION_WORDS = get_int_env("MAX_CORRECTION_WORDS", 4)
+
+
 MAX_CORRECTION_CHARS = get_int_env("MAX_CORRECTION_CHARS", 35)
 OCR_REMOVE_STAMPS = get_bool_env("OCR_REMOVE_STAMPS", True)
 OCR_USE_TEXT_DETECTION_ONLY = get_bool_env("OCR_USE_TEXT_DETECTION_ONLY", True)
@@ -234,6 +270,19 @@ OCR_MAX_WORKERS = get_int_env("OCR_MAX_WORKERS", 10)
 print(f"Setting up OCR thread pool with max_workers={OCR_MAX_WORKERS}")
 OCR_THREAD_POOL = ThreadPoolExecutor(max_workers=OCR_MAX_WORKERS)
 
+class OCRDeviceConfig(tuple):
+    def __new__(cls, paddle_device, torch_device, detector_backend, onnx_model_path, onnx_provider, gpu_index, disable_cpu_fallback):
+        return super(OCRDeviceConfig, cls).__new__(cls, (paddle_device, torch_device))
+        
+    def __init__(self, paddle_device, torch_device, detector_backend, onnx_model_path, onnx_provider, gpu_index, disable_cpu_fallback):
+        self.paddle_device = paddle_device
+        self.torch_device = torch_device
+        self.detector_backend = detector_backend
+        self.onnx_model_path = onnx_model_path
+        self.onnx_provider = onnx_provider
+        self.gpu_index = gpu_index
+        self.disable_cpu_fallback = disable_cpu_fallback
+
 _cached_ocr_devices = None
 
 def detect_ocr_devices():
@@ -241,42 +290,149 @@ def detect_ocr_devices():
     if _cached_ocr_devices is not None:
         return _cached_ocr_devices
 
+    # 1. Read environmental variables
     env_device = os.getenv("OCR_DEVICE", "auto").strip().lower()
+    gpu_required = get_bool_env("OCR_GPU_REQUIRED", False)
+    gpu_index = get_int_env("OCR_GPU_INDEX", 0)
+    detector_backend = os.getenv("OCR_DETECTOR_BACKEND", "paddle").strip().lower()
+    onnx_model_path = os.getenv("OCR_DETECTOR_ONNX_MODEL", "").strip()
+    disable_cpu_fallback = get_bool_env("OCR_ORT_DISABLE_CPU_FALLBACK", False)
 
-    if env_device == "gpu":
-        print("OCR Device forced to GPU via OCR_DEVICE environment variable.")
-        _cached_ocr_devices = ("gpu", "cuda")
-        return _cached_ocr_devices
-    elif env_device == "cpu":
-        print("OCR Device forced to CPU via OCR_DEVICE environment variable.")
-        _cached_ocr_devices = ("cpu", "cpu")
-        return _cached_ocr_devices
+    # 2. Validate env values
+    if env_device not in ["auto", "gpu", "cpu"]:
+        raise ValueError(f"Invalid OCR_DEVICE: '{env_device}'. Must be one of: auto, gpu, cpu")
+    if detector_backend not in ["paddle", "onnxruntime"]:
+        raise ValueError(f"Invalid OCR_DETECTOR_BACKEND: '{detector_backend}'. Must be one of: paddle, onnxruntime")
 
-    paddle_device = "cpu"
-    torch_device = "cpu"
+    if detector_backend == "onnxruntime":
+        if not onnx_model_path:
+            raise ValueError("OCR_DETECTOR_ONNX_MODEL must be configured when OCR_DETECTOR_BACKEND is 'onnxruntime'")
+        if not os.path.isabs(onnx_model_path):
+            # Convert relative path to absolute
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            onnx_model_path = os.path.abspath(os.path.join(base_dir, onnx_model_path))
+        if not os.path.exists(onnx_model_path):
+            raise FileNotFoundError(f"ONNX model file not found at: '{onnx_model_path}'")
 
-    # Check PyTorch CUDA availability
+    # 3. Detect framework availability and GPU support
+    has_torch_cuda = False
     try:
         import torch
-        if torch.cuda.is_available():
-            torch_device = "cuda"
-    except Exception:
+        has_torch_cuda = torch.cuda.is_available()
+        # Verify GPU index if CUDA is available
+        if has_torch_cuda:
+            num_devices = torch.cuda.device_count()
+            if gpu_index >= num_devices:
+                if gpu_required:
+                    raise ValueError(f"Forced GPU index {gpu_index} is out of range. Only {num_devices} GPUs available.")
+                else:
+                    print(f"Warning: GPU index {gpu_index} is out of range. Falling back to GPU 0.")
+                    gpu_index = 0
+    except ImportError:
         pass
 
-    # Check PaddlePaddle CUDA availability
+    has_paddle_cuda = False
     try:
         import paddle
-        if paddle.is_compiled_with_cuda() and paddle.device.cuda.device_count() > 0:
-            paddle_device = "gpu"
-    except Exception:
+        has_paddle_cuda = paddle.is_compiled_with_cuda() and paddle.device.cuda.device_count() > 0
+    except ImportError:
         pass
 
-    print(f"Automatically detected OCR devices -> Detector (Paddle): {paddle_device.upper()}, Recognizer (VietOCR/Torch): {torch_device.upper()}")
-    _cached_ocr_devices = (paddle_device, torch_device)
+    # For ONNX Runtime CUDA EP detection
+    has_ort_cuda = False
+    if detector_backend == "onnxruntime":
+        try:
+            import onnxruntime as ort
+            has_ort_cuda = 'CUDAExecutionProvider' in ort.get_available_providers()
+        except ImportError:
+            pass
+
+    # 4. Determine device allocation
+    paddle_device = "cpu"
+    torch_device = "cpu"
+    onnx_provider = "CPUExecutionProvider"
+
+    if env_device == "gpu":
+        # Check PyTorch GPU
+        if has_torch_cuda:
+            torch_device = f"cuda:{gpu_index}"
+        else:
+            if gpu_required:
+                raise RuntimeError("OCR_DEVICE is set to 'gpu' and OCR_GPU_REQUIRED=True, but PyTorch CUDA is not available!")
+            else:
+                print("Warning: OCR_DEVICE is set to 'gpu' but PyTorch CUDA is not available. Falling back to CPU for Recognizer.")
+                torch_device = "cpu"
+
+        # Check Detector GPU
+        if detector_backend == "paddle":
+            if has_paddle_cuda:
+                paddle_device = "gpu"
+            else:
+                if gpu_required:
+                    raise RuntimeError("OCR_DEVICE is set to 'gpu' and OCR_GPU_REQUIRED=True, but PaddlePaddle CUDA is not available!")
+                else:
+                    print("Warning: OCR_DEVICE is set to 'gpu' but PaddlePaddle CUDA is not available. Falling back to CPU for Detector.")
+                    paddle_device = "cpu"
+        elif detector_backend == "onnxruntime":
+            if has_ort_cuda:
+                onnx_provider = "CUDAExecutionProvider"
+                paddle_device = "gpu"
+            else:
+                if gpu_required:
+                    raise RuntimeError("OCR_DEVICE is set to 'gpu' and OCR_GPU_REQUIRED=True, but ONNXRuntime CUDAExecutionProvider is not available!")
+                else:
+                    print("Warning: OCR_DEVICE is set to 'gpu' but ONNXRuntime CUDAExecutionProvider is not available. Falling back to CPUExecutionProvider.")
+                    onnx_provider = "CPUExecutionProvider"
+                    paddle_device = "cpu"
+
+    elif env_device == "cpu":
+        torch_device = "cpu"
+        paddle_device = "cpu"
+        onnx_provider = "CPUExecutionProvider"
+
+    else:  # "auto"
+        # Try GPU if available and not explicitly prohibited
+        if has_torch_cuda:
+            torch_device = f"cuda:{gpu_index}"
+        else:
+            if gpu_required:
+                raise RuntimeError("OCR_DEVICE is 'auto' and OCR_GPU_REQUIRED=True, but PyTorch CUDA is not available!")
+            torch_device = "cpu"
+
+        if detector_backend == "paddle":
+            if has_paddle_cuda:
+                paddle_device = "gpu"
+            else:
+                if gpu_required:
+                    raise RuntimeError("OCR_DEVICE is 'auto' and OCR_GPU_REQUIRED=True, but PaddlePaddle CUDA is not available!")
+                paddle_device = "cpu"
+        elif detector_backend == "onnxruntime":
+            if has_ort_cuda:
+                onnx_provider = "CUDAExecutionProvider"
+                paddle_device = "gpu"
+            else:
+                if gpu_required:
+                    raise RuntimeError("OCR_DEVICE is 'auto' and OCR_GPU_REQUIRED=True, but ONNXRuntime CUDAExecutionProvider is not available!")
+                onnx_provider = "CPUExecutionProvider"
+                paddle_device = "cpu"
+
+    config_obj = OCRDeviceConfig(
+        paddle_device=paddle_device,
+        torch_device=torch_device,
+        detector_backend=detector_backend,
+        onnx_model_path=onnx_model_path,
+        onnx_provider=onnx_provider,
+        gpu_index=gpu_index,
+        disable_cpu_fallback=disable_cpu_fallback
+    )
+    
+    print(f"Device Configuration: Detector ({detector_backend.upper()}): {paddle_device.upper()} (Provider: {onnx_provider if detector_backend=='onnxruntime' else 'N/A'}), Recognizer (VietOCR/Torch): {torch_device.upper()}")
+    _cached_ocr_devices = config_obj
     return _cached_ocr_devices
 
 def get_detector(import_type="clear"):
     import_type = normalize_import_type(import_type)
+    config = detect_ocr_devices()
 
     with DETECTOR_LOCK:
         if import_type in detectors:
@@ -284,6 +440,18 @@ def get_detector(import_type="clear"):
 
         mode_config = OCR_IMPORT_TYPES[import_type]
         print(f"Initializing detector for import type '{import_type}'...")
+
+        if config.detector_backend == "onnxruntime":
+            from ppocr.modeling.onnx_detector_adapter import ONNXDetectorAdapter
+            detector = ONNXDetectorAdapter(
+                model_file=config.onnx_model_path,
+                provider=config.onnx_provider,
+                device_id=config.gpu_index,
+                disable_cpu_fallback=config.disable_cpu_fallback,
+                score_mode=mode_config.get("det_db_score_mode", "slow")
+            )
+            detectors[import_type] = detector
+            return detector
 
         paddle_device, _ = detect_ocr_devices()
         use_mkldnn = get_bool_env("FLAGS_use_mkldnn", False)
@@ -333,25 +501,84 @@ def get_detector(import_type="clear"):
 def init_models():
     global recognizer
     print("Initializing models globally...")
+    
+    # Đăng ký thư mục DLL của PyTorch cho ONNX Runtime trên Windows
+    if os.name == 'nt':
+        try:
+            import torch
+            torch_lib = os.path.join(os.path.dirname(torch.__file__), 'lib')
+            if os.path.exists(torch_lib):
+                print(f"Adding PyTorch DLL directory to PATH: {torch_lib}")
+                os.add_dll_directory(torch_lib)
+        except Exception as e:
+            print(f"Warning: Could not add PyTorch DLL directory: {e}")
+
     from vietocr.tool.predictor import Predictor
     from vietocr.tool.config import Cfg
 
-    # Initialize the default OCR detector so the first request stays responsive.
-    get_detector("clear")
-
-    # Initialize VietOCR recognizer (VGG Seq2Seq model)
-    config = Cfg.load_config_from_name('vgg_seq2seq')
+    config = detect_ocr_devices()
     
-    _, torch_device = detect_ocr_devices()
-    config['device'] = torch_device
-    config['predictor']['beamsearch'] = False
+    # Preload DLLs: importing torch automatically loads CUDA/cuDNN DLLs on Windows
+    try:
+        import torch
+        print(f"PyTorch version: {torch.__version__}")
+        if torch.cuda.is_available():
+            print(f"CUDA Toolkit version in PyTorch: {torch.version.cuda}")
+            gpu_name = torch.cuda.get_device_name(config.gpu_index)
+            print(f"GPU Device Name: {gpu_name}")
+            print(f"Supported architectures: {torch.cuda.get_arch_list()}")
+            
+            # Smoke tensor operation on GPU
+            device_str = f"cuda:{config.gpu_index}"
+            print(f"Running smoke tensor operation on {device_str}...")
+            x = torch.randn(2, 2, device=device_str)
+            y = torch.randn(2, 2, device=device_str)
+            z = torch.matmul(x, y)
+            torch.cuda.synchronize(device_str)
+            print("Smoke tensor operation completed successfully!")
+    except Exception as e:
+        print(f"Error checking/initializing PyTorch CUDA: {e}")
+        if config.torch_device != "cpu":
+            raise RuntimeError(f"Strict CUDA Validation failed for PyTorch: {e}")
+
+    # 1. Initialize detector
+    print("Step 1: Initializing default detector...")
+    detector = get_detector("clear")
+    
+    # Smoke inference on detector
+    print("Running detector smoke inference...")
+    dummy_img = np.zeros((64, 64, 3), dtype=np.uint8)
+    try:
+        _ = detector.predict(dummy_img)
+        print("Detector smoke inference completed successfully!")
+    except Exception as e:
+        raise RuntimeError(f"Detector smoke inference failed: {e}")
+
+    # 2. Initialize recognizer
+    print("Step 2: Initializing VietOCR recognizer...")
+    config_vocr = Cfg.load_config_from_name('vgg_seq2seq')
+    config_vocr['device'] = config.torch_device
+    config_vocr['predictor']['beamsearch'] = False
+    
     if os.path.exists(local_weights):
-        config['weights'] = local_weights
+        config_vocr['weights'] = local_weights
         print(f"Loaded local weights from: {local_weights}")
     else:
         print("Warning: Local weights not found. VietOCR will download from internet if online.")
-    recognizer = Predictor(config)
-    print("Models initialized successfully!")
+        
+    try:
+        recognizer = Predictor(config_vocr)
+        print("Recognizer initialized.")
+        
+        # Smoke inference on recognizer
+        print("Running recognizer smoke inference...")
+        dummy_crop = Image.fromarray(np.zeros((32, 100, 3), dtype=np.uint8))
+        _ = recognizer.predict(dummy_crop)
+        print("Recognizer smoke inference completed successfully!")
+    except Exception as e:
+        raise RuntimeError(f"Recognizer initialization/smoke inference failed: {e}")
+
+    print("All models initialized successfully and verified!")
 
 # Initialize on startup
 ensure_storage_dirs()
@@ -1940,7 +2167,7 @@ def process_image_ocr(pil_img, import_type="clear", layout_preserve=False):
     # Auto-downscale if running on CPU to avoid C++ segmentation fault on large images
     paddle_device, _ = detect_ocr_devices()
     if paddle_device == "cpu":
-        max_cpu_edge = 1500
+        max_cpu_edge = 800
         if max(working_img.width, working_img.height) > max_cpu_edge:
             scale = max_cpu_edge / max(working_img.width, working_img.height)
             new_w = (int(working_img.width * scale) // 2) * 2
@@ -2068,10 +2295,59 @@ def process_docx_text(file_path):
 
 @app.route('/health', methods=['GET'])
 def health():
-    return jsonify({
+    config = detect_ocr_devices()
+    
+    # Check GPU name if available
+    gpu_name = None
+    try:
+        import torch
+        if torch.cuda.is_available():
+            gpu_name = torch.cuda.get_device_name(config.gpu_index)
+    except Exception:
+        pass
+
+    import_type = "clear"
+    detector_verified = import_type in detectors
+    
+    detector_info = {
+        "framework": config.detector_backend,
+        "device": config.paddle_device,
+        "verified": detector_verified,
+    }
+    
+    if config.detector_backend == "onnxruntime":
+        detector_info.update({
+            "provider": config.onnx_provider,
+            "cpu_fallback": not config.disable_cpu_fallback,
+        })
+    else:
+        detector_info.update({
+            "provider": "PaddlePaddle",
+            "cpu_fallback": True,
+        })
+        
+    recognizer_verified = recognizer is not None
+    
+    payload = {
         "status": "ready",
-        "engine": "extraction_ocr_engine"
-    })
+        "engine": "extraction_ocr_engine",
+        "requested_device": os.getenv("OCR_DEVICE", "auto"),
+        "gpu_required": get_bool_env("OCR_GPU_REQUIRED", False),
+        "detector": detector_info,
+        "recognizer": {
+            "framework": "vietocr/pytorch",
+            "device": config.torch_device,
+            "verified": recognizer_verified,
+        }
+    }
+    
+    if gpu_name:
+        payload["gpu_detail"] = {
+            "index": config.gpu_index,
+            "name": gpu_name
+        }
+        
+    return jsonify(payload)
 
 
 @app.route('/ui', methods=['GET'])

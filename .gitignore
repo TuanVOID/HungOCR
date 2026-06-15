@@ -49,3 +49,10 @@ ocr_results_vietocr.txt
 .env
 .env.*
 !.env.example
+
+# Custom ignores
+.venv-export/
+.venv-gpu/
+models/
+benchmark/*_runs/
+

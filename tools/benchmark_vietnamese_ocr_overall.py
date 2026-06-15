@@ -591,6 +591,7 @@ def run_overall_benchmark(
     listing_url: str = DEFAULT_LISTING_URL,
     output_root: str | Path | None = None,
     base_doc_count: int = DEFAULT_BASE_DOC_COUNT,
+    manifest_file: str | Path | None = None,
 ) -> dict:
     session = make_session()
     health = session.get(f"{server_url.rstrip('/')}/health", timeout=20)
@@ -603,7 +604,28 @@ def run_overall_benchmark(
         output_dir = Path(output_root)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    scenarios = build_overall_scenarios(session, listing_url, base_doc_count=base_doc_count)
+    if manifest_file:
+        print(f"Loading base scenarios from manifest file: {manifest_file}")
+        with open(manifest_file, "r", encoding="utf-8") as f:
+            manifest_data = json.load(f)
+        scenarios = []
+        for s in manifest_data.get("base_scenarios", []):
+            scenarios.append(
+                BaseScenario(
+                    scenario_id=s["scenario_id"],
+                    kind=s["kind"],
+                    title=s["title"],
+                    paragraphs=s.get("paragraphs") or [],
+                    table_headers=s.get("table_headers") or [],
+                    table_rows=s.get("table_rows") or [],
+                    font_name=s.get("font_name", PRINT_FONT),
+                    background=s.get("background", "white"),
+                    foreground=s.get("foreground", "black"),
+                )
+            )
+    else:
+        scenarios = build_overall_scenarios(session, listing_url, base_doc_count=base_doc_count)
+
     transforms = ["clean", "rot90", "rot180", "rot270", "low_quality"]
     samples = build_samples(scenarios, output_dir, transforms)
 
@@ -651,6 +673,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--listing-url", default=DEFAULT_LISTING_URL, help="Thư Viện Pháp Luật listing URL.")
     parser.add_argument("--output-dir", default=None, help="Output directory for images and reports.")
     parser.add_argument("--base-doc-count", type=int, default=DEFAULT_BASE_DOC_COUNT, help="How many legal docs to scrape.")
+    parser.add_argument("--manifest-file", default=None, help="Use existing manifest file to avoid scraping.")
     return parser.parse_args(argv)
 
 
@@ -661,6 +684,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         listing_url=args.listing_url,
         output_root=args.output_dir,
         base_doc_count=args.base_doc_count,
+        manifest_file=args.manifest_file,
     )
     return 0
 

@@ -1,0 +1,27 @@
+shapely
+scikit-image
+pyclipper
+lmdb; python_version >= "3.9"
+lmdb<1.5; python_version < "3.9"
+tqdm
+numpy
+rapidfuzz
+opencv-python
+opencv-contrib-python
+cython
+Pillow
+openpyxl
+pyyaml
+requests
+beautifulsoup4
+albumentations
+albucore
+packaging
+
+# Server API Dependencies
+python-dotenv
+Flask
+pypdfium2
+python-docx
+aiohttp
+typing-extensions

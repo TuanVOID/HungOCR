@@ -1,0 +1,4 @@
+torch==2.10.0
+torchvision==0.25.0
+onnxruntime-gpu==1.22.0
+vietocr==0.3.13

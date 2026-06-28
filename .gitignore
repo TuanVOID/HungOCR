@@ -53,6 +53,7 @@ ocr_results_vietocr.txt
 # Custom ignores
 .venv-export/
 .venv-gpu/
+.venv_vl15/
 models/
 benchmark/*_runs/
 

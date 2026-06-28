@@ -28,6 +28,7 @@ import re
 import sys
 import tempfile
 import shutil
+import time
 import uuid
 from datetime import date, datetime, timedelta
 from io import BytesIO
@@ -328,15 +329,20 @@ def detect_ocr_devices():
                 else:
                     print(f"Warning: GPU index {gpu_index} is out of range. Falling back to GPU 0.")
                     gpu_index = 0
-    except ImportError:
-        pass
+    except Exception as exc:
+        if gpu_required:
+            raise RuntimeError(f"PyTorch CUDA detection failed: {exc}") from exc
+        print(f"Warning: PyTorch CUDA detection failed. Falling back to CPU for Recognizer. Error: {exc}")
 
     has_paddle_cuda = False
-    try:
-        import paddle
-        has_paddle_cuda = paddle.is_compiled_with_cuda() and paddle.device.cuda.device_count() > 0
-    except ImportError:
-        pass
+    if detector_backend == "paddle":
+        try:
+            import paddle
+            has_paddle_cuda = paddle.is_compiled_with_cuda() and paddle.device.cuda.device_count() > 0
+        except Exception as exc:
+            if gpu_required:
+                raise RuntimeError(f"PaddlePaddle CUDA detection failed: {exc}") from exc
+            print(f"Warning: PaddlePaddle CUDA detection failed. Falling back to CPU for Detector. Error: {exc}")
 
     # For ONNX Runtime CUDA EP detection
     has_ort_cuda = False
@@ -344,8 +350,10 @@ def detect_ocr_devices():
         try:
             import onnxruntime as ort
             has_ort_cuda = 'CUDAExecutionProvider' in ort.get_available_providers()
-        except ImportError:
-            pass
+        except Exception as exc:
+            if gpu_required:
+                raise RuntimeError(f"ONNX Runtime CUDA detection failed: {exc}") from exc
+            print(f"Warning: ONNX Runtime CUDA detection failed. Falling back to CPU for Detector. Error: {exc}")
 
     # 4. Determine device allocation
     paddle_device = "cpu"
@@ -2358,6 +2366,7 @@ def index():
 def redirect_to_ui():
     return redirect(url_for('index'))
 
+
 @app.route('/ocr', methods=['POST'])
 def run_ocr():
     if 'files' not in request.files:
@@ -2429,6 +2438,7 @@ def run_ocr():
         return jsonify({"error": f"Lỗi kiểm thử tệp đầu vào: {e}"}), 400
 
     # Processing phase
+    ocr_started_at = time.perf_counter()
     for temp_path, raw_filename in temp_files:
         filename = secure_filename(raw_filename)
         if not filename:
@@ -2565,12 +2575,15 @@ def run_ocr():
                 except Exception as cleanup_error:
                     print(f"Warning: could not remove temp file {temp_path}: {cleanup_error}")
                 
+    ocr_duration_seconds = round(time.perf_counter() - ocr_started_at, 3)
+
     return jsonify({
         "status": "success",
         "import_type": import_type,
         "import_type_label": import_type_label,
         "layout_preserve": layout_preserve,
         "llm_postprocess": llm_postprocess,
+        "ocr_duration_seconds": ocr_duration_seconds,
         "results": response_results
     })
 

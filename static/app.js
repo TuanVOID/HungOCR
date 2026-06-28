@@ -42,6 +42,35 @@ function getOcrRunStatusMessage(value) {
   return "Đang trích xuất chế độ nhanh... vui lòng chờ.";
 }
 
+function formatOcrDuration(seconds) {
+  const value = Number(seconds);
+  if (!Number.isFinite(value) || value < 0) {
+    return "";
+  }
+  if (value < 1) {
+    return `${Math.max(1, Math.round(value * 1000))} ms`;
+  }
+  if (value < 60) {
+    return `${value.toFixed(value < 10 ? 2 : 1)} giây`;
+  }
+
+  const minutes = Math.floor(value / 60);
+  const remainingSeconds = value - minutes * 60;
+  return `${minutes} phút ${remainingSeconds.toFixed(remainingSeconds < 10 ? 1 : 0)} giây`;
+}
+
+function getOcrDoneStatusMessage(payload) {
+  const importType = payload?.import_type || "clear";
+  const importTypeLabel = getImportTypeLabel(importType);
+  const durationLabel = formatOcrDuration(payload?.ocr_duration_seconds);
+
+  if (importType === "clear" && durationLabel) {
+    return `OCR xong ở chế độ ${importTypeLabel}. Thời gian OCR: ${durationLabel}.`;
+  }
+
+  return `OCR xong ở chế độ ${importTypeLabel}.`;
+}
+
 function setStatus(text, type = "idle") {
   if (statusEl) {
     statusEl.textContent = text;
@@ -468,7 +497,8 @@ function renderResults(payload) {
     resultsEl.appendChild(item);
   });
 
-  resultMetaEl.textContent = `${results.length} file(s) processed · ${importTypeLabel}`;
+  const durationLabel = formatOcrDuration(payload?.ocr_duration_seconds);
+  resultMetaEl.textContent = `${results.length} file(s) processed · ${importTypeLabel}${durationLabel ? ` · ${durationLabel}` : ""}`;
   lastOcrPayload = payload;
   lastOcrText = textChunks.join("\n\n---\n\n");
   lastDownloadOcrTxtName = `ocr-goc-${new Date().toISOString().replace(/[:.]/g, "-")}.txt`;
@@ -778,7 +808,7 @@ form.addEventListener("submit", async (event) => {
     }
 
     renderResults(payload);
-    setStatus(`OCR xong ở chế độ ${getImportTypeLabel(payload?.import_type)}.`, "active");
+    setStatus(getOcrDoneStatusMessage(payload), "active");
   } catch (error) {
     resultsEl.className = "results empty";
     resultsEl.innerHTML = `

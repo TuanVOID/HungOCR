@@ -14,6 +14,10 @@ from urllib.request import urlopen
 ROOT_DIR = Path(__file__).resolve().parent
 APP_FILE = ROOT_DIR / "app_backend.py"
 LOCAL_VENV_PYTHON = ROOT_DIR / ".venv" / "Scripts" / "python.exe"
+GPU_VENV_CANDIDATES = [
+    ROOT_DIR / ".venv-gpu" / "Scripts" / "python.exe",
+    ROOT_DIR / ".venv_vl15" / "Scripts" / "python.exe",
+]
 
 # Load environment variables from .env
 def load_env():
@@ -42,6 +46,13 @@ STARTUP_TIMEOUT_SECONDS = int(os.getenv("OCR_STARTUP_TIMEOUT_SECONDS", "120"))
 
 
 def resolve_python_executable() -> str:
+    requested_device = os.getenv("OCR_DEVICE", "auto").strip().lower()
+    gpu_required = os.getenv("OCR_GPU_REQUIRED", "").strip().lower() in {"1", "true", "yes", "on"}
+    if requested_device == "gpu" or gpu_required:
+        for candidate in GPU_VENV_CANDIDATES:
+            if candidate.exists():
+                return str(candidate)
+
     if LOCAL_VENV_PYTHON.exists():
         return str(LOCAL_VENV_PYTHON)
     return sys.executable

@@ -154,6 +154,7 @@ MAX_CORRECTION_CHARS = get_int_env("MAX_CORRECTION_CHARS", 35)
 OCR_REMOVE_STAMPS = get_bool_env("OCR_REMOVE_STAMPS", True)
 OCR_USE_TEXT_DETECTION_ONLY = get_bool_env("OCR_USE_TEXT_DETECTION_ONLY", True)
 OCR_RECOGNITION_BATCH = get_bool_env("OCR_RECOGNITION_BATCH", True)
+OCR_FORCE_LIGHT_MODE = get_bool_env("OCR_FORCE_LIGHT_MODE", True)
 
 # Global model placeholders
 detectors = {}
@@ -180,6 +181,8 @@ OCR_IMPORT_TYPE_ALIASES = {
 }
 
 def normalize_import_type(raw_value):
+    if OCR_FORCE_LIGHT_MODE:
+        return "clear"
     value = str(raw_value or "clear").strip().lower()
     value = OCR_IMPORT_TYPE_ALIASES.get(value, value)
     if value not in OCR_IMPORT_TYPES:

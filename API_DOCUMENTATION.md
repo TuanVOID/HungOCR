@@ -2,6 +2,30 @@
 
 Dịch vụ này được xây dựng bằng **Flask**, chạy mặc định ở cổng **`5000`** (cấu hình qua biến `PORT` trong tệp `.env`). Dịch vụ hỗ trợ nhận diện ký tự quang học (OCR) từ hình ảnh, tài liệu PDF, DOCX, cùng khả năng sửa lỗi chính tả và tóm tắt văn bản bằng LLM (Ollama).
 
+## Lifecycle batch dành cho TVPL
+
+Khởi chạy service GPU strict, lazy-load model:
+
+```powershell
+.\start_tvpl_service.ps1 -Port 5000
+```
+
+Service không load model khi startup. Client phải lấy exclusive lifecycle lease trước
+khi gọi `/ocr`, sau đó unload và yêu cầu xác minh VRAM:
+
+```text
+POST /lifecycle/load
+{"batch_id":"tvpl-batch-id","mode":"clear","device":"gpu"}
+
+POST /lifecycle/unload
+{"batch_id":"tvpl-batch-id","verify_vram_release":true}
+```
+
+`GET /health` trả thêm `lifecycle` với ownership, batch/model state, load/unload
+counts và các phép đo VRAM. Một batch khác không thể load hoặc unload model khi lease
+đang được giữ. Launcher TVPL cũng bật `OCR_FORCE_PDF_IMAGE_OCR=1`, vì vậy mọi trang
+PDF đều được render và đi qua detector/recognizer, kể cả PDF có embedded text.
+
 ---
 
 ## 1. API Kiểm tra trạng thái dịch vụ (Health Check)

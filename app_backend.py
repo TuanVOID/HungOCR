@@ -1,4 +1,6 @@
+import gc
 import os
+import subprocess
 from dotenv import load_dotenv
 load_dotenv() # Load environmental variables from .env
 
@@ -38,7 +40,7 @@ from io import BytesIO
 import cv2
 import numpy as np
 from PIL import Image
-from flask import Flask, request, jsonify, render_template, send_file, redirect, url_for
+from flask import Flask, g, request, jsonify, render_template, send_file, redirect, url_for
 import pypdfium2 as pdfium
 import requests
 from openpyxl import Workbook
@@ -154,6 +156,7 @@ MAX_CORRECTION_CHARS = get_int_env("MAX_CORRECTION_CHARS", 35)
 OCR_REMOVE_STAMPS = get_bool_env("OCR_REMOVE_STAMPS", True)
 OCR_USE_TEXT_DETECTION_ONLY = get_bool_env("OCR_USE_TEXT_DETECTION_ONLY", True)
 OCR_RECOGNITION_BATCH = get_bool_env("OCR_RECOGNITION_BATCH", True)
+OCR_FORCE_PDF_IMAGE_OCR = get_bool_env("OCR_FORCE_PDF_IMAGE_OCR", False)
 
 # Global model placeholders
 detectors = {}
@@ -266,10 +269,37 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Threading lock for safe initialization of models
 DETECTOR_LOCK = threading.Lock()
+LIFECYCLE_LOCK = threading.RLock()
 # Global thread pool for parallel OCR / Spellcheck / LLM tasks
 OCR_MAX_WORKERS = get_int_env("OCR_MAX_WORKERS", 10)
 print(f"Setting up OCR thread pool with max_workers={OCR_MAX_WORKERS}")
 OCR_THREAD_POOL = ThreadPoolExecutor(max_workers=OCR_MAX_WORKERS)
+
+_lifecycle_ownership = os.getenv("OCR_LIFECYCLE_OWNERSHIP", "exclusive_lease").strip().lower()
+if _lifecycle_ownership not in {"owned", "exclusive_lease"}:
+    raise ValueError("OCR_LIFECYCLE_OWNERSHIP must be 'owned' or 'exclusive_lease'")
+
+OCR_REQUIRE_EXPLICIT_LIFECYCLE = get_bool_env("OCR_REQUIRE_EXPLICIT_LIFECYCLE", False)
+OCR_VRAM_RELEASE_TOLERANCE_MB = get_float_env("OCR_VRAM_RELEASE_TOLERANCE_MB", 384.0)
+LIFECYCLE_STATE = {
+    "ownership": _lifecycle_ownership,
+    "model_loaded": False,
+    "batch_id": None,
+    "last_batch_id": None,
+    "mode_effective": None,
+    "device_effective": None,
+    "vram_before_mb": None,
+    "vram_loaded_mb": None,
+    "vram_after_unload_mb": None,
+    "vram_released_mb": None,
+    "vram_release_verified": False,
+    "vram_release_tolerance_mb": OCR_VRAM_RELEASE_TOLERANCE_MB,
+    "vram_measurement_source": "nvidia-smi",
+    "load_count": 0,
+    "unload_count": 0,
+    "active_ocr_requests": 0,
+    "last_error": None,
+}
 
 class OCRDeviceConfig(tuple):
     def __new__(cls, paddle_device, torch_device, detector_backend, onnx_model_path, onnx_provider, gpu_index, disable_cpu_fallback):
@@ -508,6 +538,8 @@ def get_detector(import_type="clear"):
 
 def init_models():
     global recognizer
+    if recognizer is not None and "clear" in detectors:
+        return
     print("Initializing models globally...")
     
     # Đăng ký thư mục DLL của PyTorch cho ONNX Runtime trên Windows
@@ -588,10 +620,159 @@ def init_models():
 
     print("All models initialized successfully and verified!")
 
-# Initialize on startup
+def query_gpu_used_memory_mb():
+    """Return total used VRAM for the configured GPU without loading OCR models."""
+    try:
+        config = detect_ocr_devices()
+        completed = subprocess.run(
+            [
+                "nvidia-smi",
+                f"--id={config.gpu_index}",
+                "--query-gpu=memory.used",
+                "--format=csv,noheader,nounits",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        raw_value = completed.stdout.strip().splitlines()[0].strip()
+        return float(raw_value)
+    except Exception as exc:
+        print(f"Warning: could not measure GPU VRAM with nvidia-smi: {exc}")
+        return None
+
+
+def query_post_unload_vram_mb(sample_count=4, interval_seconds=0.5):
+    """Sample asynchronous framework cleanup and retain the lowest observed VRAM."""
+    samples = []
+    for ordinal in range(max(1, sample_count)):
+        value = query_gpu_used_memory_mb()
+        if isinstance(value, (int, float)):
+            samples.append(float(value))
+        if ordinal + 1 < sample_count:
+            time.sleep(interval_seconds)
+    return min(samples) if samples else None
+
+
+def gpu_device_is_effective(config):
+    detector_gpu = (
+        str(config.paddle_device).lower().startswith("gpu")
+        or str(config.onnx_provider).lower().startswith("cuda")
+    )
+    recognizer_gpu = str(config.torch_device).lower().startswith("cuda")
+    return detector_gpu and recognizer_gpu
+
+
+def unload_models():
+    """Drop all owned model references and ask each framework to release GPU caches."""
+    global recognizer
+
+    with MODEL_INFERENCE_LOCK:
+        detector_values = list(detectors.values())
+        detectors.clear()
+        recognizer = None
+
+    for detector in detector_values:
+        for method_name in ("close", "shutdown"):
+            method = getattr(detector, method_name, None)
+            if callable(method):
+                try:
+                    method()
+                except Exception as exc:
+                    print(f"Warning: detector {method_name} failed during unload: {exc}")
+                break
+
+    del detector_values
+    gc.collect()
+
+    try:
+        import torch
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+            torch.cuda.empty_cache()
+            ipc_collect = getattr(torch.cuda, "ipc_collect", None)
+            if callable(ipc_collect):
+                ipc_collect()
+    except Exception as exc:
+        print(f"Warning: PyTorch GPU cache cleanup failed: {exc}")
+
+    try:
+        import paddle
+        empty_cache = getattr(getattr(paddle.device, "cuda", None), "empty_cache", None)
+        if callable(empty_cache):
+            empty_cache()
+    except Exception as exc:
+        print(f"Warning: PaddlePaddle GPU cache cleanup failed: {exc}")
+
+    gc.collect()
+
+
+def lifecycle_snapshot():
+    return {
+        key: value
+        for key, value in LIFECYCLE_STATE.items()
+        if key != "last_batch_id"
+    }
+
+
+def _load_models_for_batch_locked(batch_id):
+    if LIFECYCLE_STATE["model_loaded"]:
+        if LIFECYCLE_STATE["batch_id"] != batch_id:
+            raise RuntimeError(
+                f"OCR lifecycle is already leased by batch {LIFECYCLE_STATE['batch_id']}"
+            )
+        return False
+
+    config = detect_ocr_devices()
+    if not gpu_device_is_effective(config):
+        raise RuntimeError("Detector and recognizer are not both configured for GPU")
+
+    before_vram_mb = query_gpu_used_memory_mb()
+    if before_vram_mb is None:
+        raise RuntimeError("GPU VRAM baseline is unavailable")
+
+    LIFECYCLE_STATE.update({
+        "batch_id": batch_id,
+        "last_batch_id": batch_id,
+        "mode_effective": "clear",
+        "device_effective": "gpu",
+        "vram_before_mb": before_vram_mb,
+        "vram_loaded_mb": None,
+        "vram_after_unload_mb": None,
+        "vram_released_mb": None,
+        "vram_release_verified": False,
+        "last_error": None,
+    })
+
+    try:
+        init_models()
+        if recognizer is None or "clear" not in detectors:
+            raise RuntimeError("OCR model initialization did not produce both models")
+        loaded_vram_mb = query_gpu_used_memory_mb()
+        if loaded_vram_mb is None:
+            raise RuntimeError("Loaded GPU VRAM measurement is unavailable")
+        LIFECYCLE_STATE.update({
+            "model_loaded": True,
+            "vram_loaded_mb": loaded_vram_mb,
+            "load_count": int(LIFECYCLE_STATE["load_count"]) + 1,
+        })
+        return True
+    except Exception:
+        unload_models()
+        LIFECYCLE_STATE.update({
+            "model_loaded": False,
+            "batch_id": None,
+            "mode_effective": None,
+            "device_effective": None,
+        })
+        raise
+
+
+# Storage is prepared at startup, but OCR models are deliberately lazy-loaded through
+# the lifecycle lease so dependency preflight does not consume VRAM.
 ensure_storage_dirs()
 cleanup_storage_older_than(STORAGE_RETENTION_DAYS)
-init_models()
 
 def crop_box(image, box, padding=3):
     try:
@@ -2301,6 +2482,171 @@ def process_docx_text(file_path):
     except Exception as e:
         raise ValueError(f"Không thể đọc file Word: {str(e)}")
 
+
+@app.before_request
+def acquire_ocr_lifecycle_request():
+    if request.endpoint != "run_ocr":
+        return None
+
+    with LIFECYCLE_LOCK:
+        if not LIFECYCLE_STATE["model_loaded"]:
+            if OCR_REQUIRE_EXPLICIT_LIFECYCLE:
+                return jsonify({
+                    "error": "OCR models are not loaded; acquire a lifecycle lease first.",
+                    "lifecycle": lifecycle_snapshot(),
+                }), 409
+            try:
+                _load_models_for_batch_locked("__interactive__")
+            except Exception as exc:
+                LIFECYCLE_STATE["last_error"] = type(exc).__name__
+                return jsonify({
+                    "error": f"OCR model load failed: {type(exc).__name__}",
+                    "lifecycle": lifecycle_snapshot(),
+                }), 503
+
+        LIFECYCLE_STATE["active_ocr_requests"] = int(
+            LIFECYCLE_STATE["active_ocr_requests"]
+        ) + 1
+        g.ocr_lifecycle_acquired = True
+    return None
+
+
+@app.teardown_request
+def release_ocr_lifecycle_request(_error):
+    if not getattr(g, "ocr_lifecycle_acquired", False):
+        return
+    with LIFECYCLE_LOCK:
+        LIFECYCLE_STATE["active_ocr_requests"] = max(
+            0, int(LIFECYCLE_STATE["active_ocr_requests"]) - 1
+        )
+
+
+@app.route('/lifecycle/load', methods=['POST'])
+def lifecycle_load():
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({"error": "A JSON lifecycle request is required."}), 400
+
+    batch_id = str(payload.get("batch_id") or "").strip()
+    mode = str(payload.get("mode") or "").strip().lower()
+    device = str(payload.get("device") or "").strip().lower()
+    if not batch_id or len(batch_id) > 200:
+        return jsonify({"error": "A valid batch_id is required."}), 400
+    if mode != "clear":
+        return jsonify({"error": "Only lifecycle mode 'clear' is supported."}), 400
+    if device != "gpu":
+        return jsonify({"error": "Only strict lifecycle device 'gpu' is supported."}), 400
+
+    with LIFECYCLE_LOCK:
+        if (
+            LIFECYCLE_STATE["model_loaded"]
+            and LIFECYCLE_STATE["batch_id"] != batch_id
+        ):
+            return jsonify({
+                "error": "OCR lifecycle is leased by another batch.",
+                "lifecycle": lifecycle_snapshot(),
+            }), 409
+
+        try:
+            loaded_now = _load_models_for_batch_locked(batch_id)
+        except Exception as exc:
+            LIFECYCLE_STATE["last_error"] = type(exc).__name__
+            return jsonify({
+                "error": f"OCR lifecycle load failed: {type(exc).__name__}",
+                "lifecycle": lifecycle_snapshot(),
+            }), 503
+
+        return jsonify({
+            "load_succeeded": True,
+            "loaded_now": loaded_now,
+            "mode_effective": "clear",
+            "device_effective": "gpu",
+            "lifecycle": lifecycle_snapshot(),
+        })
+
+
+@app.route('/lifecycle/unload', methods=['POST'])
+def lifecycle_unload():
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({"error": "A JSON lifecycle request is required."}), 400
+
+    batch_id = str(payload.get("batch_id") or "").strip()
+    verify_release = payload.get("verify_vram_release") is True
+    if not batch_id:
+        return jsonify({"error": "A valid batch_id is required."}), 400
+    if not verify_release:
+        return jsonify({"error": "verify_vram_release=true is required."}), 400
+
+    with LIFECYCLE_LOCK:
+        if int(LIFECYCLE_STATE["active_ocr_requests"]) > 0:
+            return jsonify({
+                "error": "OCR requests are still active.",
+                "lifecycle": lifecycle_snapshot(),
+            }), 409
+        if not LIFECYCLE_STATE["model_loaded"]:
+            if (
+                LIFECYCLE_STATE["last_batch_id"] == batch_id
+                and LIFECYCLE_STATE["vram_release_verified"]
+            ):
+                return jsonify({
+                    "unload_succeeded": True,
+                    "already_unloaded": True,
+                    "vram_after_unload_mb": LIFECYCLE_STATE["vram_after_unload_mb"],
+                    "lifecycle": lifecycle_snapshot(),
+                })
+            return jsonify({
+                "error": "No loaded OCR lifecycle exists for this batch.",
+                "lifecycle": lifecycle_snapshot(),
+            }), 409
+        if LIFECYCLE_STATE["batch_id"] != batch_id:
+            return jsonify({
+                "error": "OCR lifecycle is leased by another batch.",
+                "lifecycle": lifecycle_snapshot(),
+            }), 409
+
+        baseline_mb = LIFECYCLE_STATE["vram_before_mb"]
+        try:
+            unload_models()
+            after_mb = query_post_unload_vram_mb()
+            loaded_mb = LIFECYCLE_STATE["vram_loaded_mb"]
+            released_mb = (
+                max(0.0, float(loaded_mb) - float(after_mb))
+                if isinstance(loaded_mb, (int, float))
+                and isinstance(after_mb, (int, float))
+                else None
+            )
+            release_verified = (
+                isinstance(baseline_mb, (int, float))
+                and isinstance(after_mb, (int, float))
+                and after_mb <= baseline_mb + OCR_VRAM_RELEASE_TOLERANCE_MB
+            )
+            LIFECYCLE_STATE.update({
+                "model_loaded": False,
+                "batch_id": None,
+                "mode_effective": None,
+                "device_effective": None,
+                "vram_after_unload_mb": after_mb,
+                "vram_released_mb": released_mb,
+                "vram_release_verified": bool(release_verified),
+                "unload_count": int(LIFECYCLE_STATE["unload_count"]) + 1,
+                "last_error": None if release_verified else "vram_release_unverified",
+            })
+        except Exception as exc:
+            LIFECYCLE_STATE["last_error"] = type(exc).__name__
+            return jsonify({
+                "unload_succeeded": False,
+                "error": f"OCR lifecycle unload failed: {type(exc).__name__}",
+                "lifecycle": lifecycle_snapshot(),
+            }), 503
+
+        return jsonify({
+            "unload_succeeded": bool(release_verified),
+            "vram_after_unload_mb": after_mb,
+            "lifecycle": lifecycle_snapshot(),
+        })
+
+
 @app.route('/health', methods=['GET'])
 def health():
     config = detect_ocr_devices()
@@ -2331,7 +2677,7 @@ def health():
     else:
         detector_info.update({
             "provider": "PaddlePaddle",
-            "cpu_fallback": True,
+            "cpu_fallback": not get_bool_env("OCR_GPU_REQUIRED", False),
         })
         
     recognizer_verified = recognizer is not None
@@ -2341,12 +2687,14 @@ def health():
         "engine": "extraction_ocr_engine",
         "requested_device": os.getenv("OCR_DEVICE", "auto"),
         "gpu_required": get_bool_env("OCR_GPU_REQUIRED", False),
+        "ocr_all_pdf_pages": OCR_FORCE_PDF_IMAGE_OCR,
         "detector": detector_info,
         "recognizer": {
             "framework": "vietocr/pytorch",
             "device": config.torch_device,
             "verified": recognizer_verified,
-        }
+        },
+        "lifecycle": lifecycle_snapshot(),
     }
     
     if gpu_name:
@@ -2462,7 +2810,7 @@ def run_ocr():
                 for i, page in enumerate(pdf_doc):
                     textpage = page.get_textpage()
                     extracted_text = textpage.get_text_bounded().strip()
-                    if is_clean_native_text(extracted_text):
+                    if not OCR_FORCE_PDF_IMAGE_OCR and is_clean_native_text(extracted_text):
                         pages_to_process.append((i + 1, "text", extracted_text))
                     else:
                         bitmap = page.render(scale=1.5)
@@ -2579,6 +2927,7 @@ def run_ocr():
 
     return jsonify({
         "status": "success",
+        "engine_version": "hungocr_flask_lifecycle_v1",
         "import_type": import_type,
         "import_type_label": import_type_label,
         "layout_preserve": layout_preserve,

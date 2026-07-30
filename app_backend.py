@@ -3000,6 +3000,9 @@ def export_summary_xlsx():
     )
 
 if __name__ == '__main__':
-    # Run on local port configured in env
+    # This service has no network authentication. Keep it loopback-only.
     port = get_int_env("PORT", 5000)
-    app.run(host='0.0.0.0', port=port, debug=False)
+    host = os.getenv("OCR_HOST", "127.0.0.1").strip().lower()
+    if host not in {"127.0.0.1", "::1", "localhost"}:
+        raise RuntimeError("OCR_HOST must be a loopback address for this unauthenticated service")
+    app.run(host=host, port=port, debug=False)

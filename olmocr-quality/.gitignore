@@ -1,0 +1,15 @@
+# Uploaded documents, generated results and local runtime state
+ui-workspace/
+workspace/
+ui/review/
+__pycache__/
+*.py[cod]
+*.log
+*.pid
+.env
+.env.*
+.venv/
+models/
+# Superseded experimental daemon launchers; use start.ps1 / stop.ps1.
+daemon-start.sh
+daemon-stop.sh

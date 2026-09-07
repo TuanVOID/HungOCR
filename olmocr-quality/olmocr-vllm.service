@@ -1,0 +1,16 @@
+[Unit]
+Description=olmOCR vLLM Quality First server
+After=network-online.target
+
+[Service]
+Type=simple
+User=imdevil
+WorkingDirectory=/home/imdevil/olmocr-quality
+ExecStart=/bin/bash /mnt/f/.VibeCoding/19.HungOCR/olmocr-quality/serve.sh
+Restart=on-failure
+RestartSec=5
+StandardOutput=append:/home/imdevil/olmocr-quality/vllm.log
+StandardError=append:/home/imdevil/olmocr-quality/vllm.log
+
+[Install]
+WantedBy=multi-user.target

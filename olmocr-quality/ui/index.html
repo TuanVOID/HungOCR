@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>olmOCR · Không gian tài liệu</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header>
+      <a class="brand" href="/" aria-label="olmOCR trang chủ"
+        ><svg
+          viewBox="0 0 32 32"
+          width="32"
+          height="32"
+          fill="none"
+          aria-hidden="true"
+        >
+          <path
+            d="M7 3h12l6 6v20H7zM19 3v7h6M11 16h10M11 21h7"
+            stroke="currentColor"
+            stroke-width="2"
+          /></svg
+        ><strong>olmOCR</strong><span>Không gian tài liệu</span></a
+      ><span id="health" class="health">Đang kiểm tra server…</span>
+    </header>
+    <main>
+      <aside>
+        <h1>Đọc tài liệu từ PDF</h1>
+        <p class="intro">
+          Chuyển bản scan thành văn bản có thể tìm kiếm, sao chép và sử dụng.
+        </p>
+        <label id="drop" class="drop" for="file"
+          ><svg
+            viewBox="0 0 48 48"
+            width="42"
+            height="42"
+            fill="none"
+            aria-hidden="true"
+          >
+            <path
+              d="M24 31V9m-8 8 8-8 8 8M9 30v9h30v-9"
+              stroke="currentColor"
+              stroke-width="2"
+            /></svg
+          ><strong id="file-label">Kéo PDF vào đây</strong
+          ><span>hoặc bấm để chọn tệp · tối đa 100 MB</span
+          ><input id="file" type="file" accept="application/pdf,.pdf"
+        /></label>
+        <button id="run" class="primary" disabled>Bắt đầu OCR</button
+        ><button id="sample" class="sample">Dùng file mẫu test_OCR.pdf</button>
+        <div id="notice" role="alert" hidden></div>
+        <section class="profile">
+          <h2>Quality First</h2>
+          <dl>
+            <div>
+              <dt>Model</dt>
+              <dd>olmOCR-2 · 7B FP8</dd>
+            </div>
+            <div>
+              <dt>Render PDF</dt>
+              <dd>1288 px</dd>
+            </div>
+            <div>
+              <dt>Xử lý đồng thời</dt>
+              <dd>2 trang</dd>
+            </div>
+            <div>
+              <dt>Kết quả</dt>
+              <dd>Markdown + JSONL</dd>
+            </div>
+          </dl>
+          <details>
+            <summary>Lưu ý khi đọc kết quả</summary>
+            <p>
+              Đọc bổ sung vùng đầu trang đầu tiên để giữ cơ quan ban hành, Quốc hiệu,
+              Tiêu ngữ, số hiệu và ngày ban hành. Hãy đối chiếu số hiệu với PDF gốc
+              trước khi sử dụng. Kết quả cũ cần chạy lại để áp dụng thay đổi này.
+            </p>
+            <p>
+              Server hiện giới hạn ảnh model ở 589.824 pixel để vừa bộ nhớ GPU.
+              Ảnh render 1288 px có thể được thu nhỏ tiếp trước khi nhận diện.
+            </p>
+          </details>
+        </section>
+        <section class="history">
+          <h2>Lần xử lý gần đây</h2>
+          <div id="history">
+            <p class="muted">Các tài liệu bạn xử lý sẽ xuất hiện ở đây.</p>
+          </div>
+        </section>
+        <p class="local">Tài liệu được xử lý trên máy này.</p>
+      </aside>
+      <section class="workspace">
+        <div class="workspace-head">
+          <div>
+            <h2 id="title">Tài liệu của bạn</h2>
+            <p id="status" aria-live="polite">
+              Chọn PDF hoặc dùng file mẫu để bắt đầu.
+            </p>
+          </div>
+          <span id="duration"></span>
+        </div>
+        <div class="panes">
+          <section class="pane">
+            <div class="toolbar">
+              <h3>PDF gốc</h3>
+              <a id="open-pdf" target="_blank" rel="noopener" hidden
+                >Mở riêng ↗</a
+              >
+            </div>
+            <div id="pdf-empty" class="empty">
+              <svg
+                viewBox="0 0 64 80"
+                width="64"
+                height="80"
+                fill="none"
+                aria-hidden="true"
+              >
+                <path
+                  d="M8 2h32l16 16v60H8zM40 2v18h16M18 35h28M18 45h28M18 55h20"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                />
+              </svg>
+              <h3>Bản gốc để đối chiếu</h3>
+              <p>PDF sẽ hiển thị tại đây khi bạn chọn tệp.</p>
+            </div>
+            <iframe id="pdf" title="Xem PDF gốc" hidden></iframe>
+          </section>
+          <section class="pane">
+            <div class="toolbar">
+              <h3>Văn bản OCR</h3>
+              <div>
+                <button id="copy" disabled>Sao chép</button
+                ><a id="md" hidden>Tải .md</a
+                ><a id="jsonl" hidden>Tải .jsonl</a>
+              </div>
+            </div>
+            <div id="result-empty" class="empty">
+              <h3>Từ trang giấy đến văn bản</h3>
+              <p>
+                Kết quả sẽ xuất hiện sau khi xử lý xong. Bạn có thể sao chép
+                hoặc tải tệp để tiếp tục làm việc.
+              </p>
+            </div>
+            <pre id="result" hidden></pre>
+          </section>
+        </div>
+        <details class="logs">
+          <summary>Nhật ký xử lý</summary>
+          <pre id="log">Chưa có tác vụ.</pre>
+        </details>
+      </section>
+    </main>
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>

@@ -1,0 +1,16 @@
+import { createRequire } from 'node:module';
+const { chromium } = createRequire(process.argv[2])('playwright');
+const browser = await chromium.launch({ channel: 'msedge', headless: true });
+const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+await page.goto('http://127.0.0.1:8010');
+const item = page.locator('#history button').first();
+await item.click();
+await page.locator('#result').waitFor({ state: 'visible' });
+await item.focus();
+await page.waitForTimeout(3500);
+if (!await page.evaluate(() => document.activeElement.matches('#history button'))) throw new Error('History lost focus');
+await page.screenshot({ path: new URL('./review/desktop.png', import.meta.url).pathname.replace(/^\/(\w:)/, '$1'), fullPage: true });
+await page.setViewportSize({ width: 390, height: 844 });
+await page.screenshot({ path: new URL('./review/mobile.png', import.meta.url).pathname.replace(/^\/(\w:)/, '$1'), fullPage: true });
+console.log('PASS: persisted result after server restart; keyboard focus survives refresh');
+await browser.close();

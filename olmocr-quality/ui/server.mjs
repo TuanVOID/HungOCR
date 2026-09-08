@@ -1,4 +1,5 @@
 import http from "node:http";
+import { createModelLifecycle } from "./model-lifecycle.mjs";
 import {
   readFile,
   writeFile,
@@ -17,6 +18,19 @@ const jobsRoot = path.join(root, "..", "ui-workspace");
 await mkdir(jobsRoot, { recursive: true });
 const jobs = new Map();
 let active = null;
+const model = createModelLifecycle(() => active !== null);
+let checkingIdle = false;
+const idleTimer = setInterval(() => {
+  if (checkingIdle) return;
+  checkingIdle = true;
+  void model
+    .tick()
+    .catch(console.error)
+    .finally(() => {
+      checkingIdle = false;
+    });
+}, 1000);
+idleTimer.unref();
 const wslPath = (p) =>
   p
     .replaceAll("\\", "/")
@@ -50,39 +64,31 @@ async function files(dir) {
   }
   return result;
 }
-async function health() {
-  try {
-    const r = await fetch("http://127.0.0.1:8000/health", {
-      signal: AbortSignal.timeout(3000),
-    });
-    return r.ok;
-  } catch {
-    return false;
-  }
-}
 async function execute(job) {
-  const dir = path.join(jobsRoot, job.id);
-  const proc = spawn(
-    "wsl.exe",
-    [
-      "-d",
-      "Ubuntu",
-      "--",
-      "bash",
-      wslPath(path.join(root, "..", "ocr.sh")),
-      wslPath(path.join(dir, "output")),
-      wslPath(path.join(dir, "input.pdf")),
-    ],
-    { windowsHide: true },
-  );
-  let log = "";
-  const append = (chunk) => {
-    log = (log + chunk.toString("utf8")).slice(-60000);
-    job.log = log;
-  };
-  proc.stdout.on("data", append);
-  proc.stderr.on("data", append);
   try {
+    job.log = "Đang nạp model OCR nếu cần…";
+    await model.ensureReady();
+    const dir = path.join(jobsRoot, job.id);
+    const proc = spawn(
+      "wsl.exe",
+      [
+        "-d",
+        "Ubuntu",
+        "--",
+        "bash",
+        wslPath(path.join(root, "..", "ocr.sh")),
+        wslPath(path.join(dir, "output")),
+        wslPath(path.join(dir, "input.pdf")),
+      ],
+      { windowsHide: true },
+    );
+    let log = "";
+    const append = (chunk) => {
+      log = (log + chunk.toString("utf8")).slice(-60000);
+      job.log = log;
+    };
+    proc.stdout.on("data", append);
+    proc.stderr.on("data", append);
     const code = await new Promise((resolve, reject) => {
       proc.once("error", reject);
       proc.once("close", resolve);
@@ -106,6 +112,7 @@ async function execute(job) {
     job.finishedAt = new Date().toISOString();
     await save(job);
     active = null;
+    model.touch();
   }
 }
 function json(res, status, data) {
@@ -147,7 +154,13 @@ const server = http.createServer(async (req, res) => {
       return json(res, 403, { error: "Origin rejected." });
     const url = new URL(req.url, "http://localhost:8010");
     if (req.method === "GET" && url.pathname === "/api/health")
-      return json(res, 200, { ready: await health(), active });
+      return json(res, 200, {
+        ready: true,
+        model_ready: model.state === "ready",
+        model_state: model.state,
+        idle_timeout_seconds: 300,
+        active,
+      });
     if (req.method === "GET" && url.pathname === "/api/jobs")
       return json(res, 200, [...jobs.values()].reverse().map(publicJob));
     if (
@@ -161,11 +174,6 @@ const server = http.createServer(async (req, res) => {
       active = "uploading";
       let job;
       try {
-        if (!(await health()))
-          return json(res, 503, {
-            error:
-              "Server OCR chưa sẵn sàng. Chạy start.ps1 và chờ model tải xong.",
-          });
         const id = randomUUID();
         const dir = path.join(jobsRoot, id);
         await mkdir(dir);

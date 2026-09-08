@@ -123,9 +123,15 @@ async function refresh() {
     ]);
     ready = server.ready;
     busy = !!server.active;
-    $("health").textContent = ready
-      ? "Server OCR sẵn sàng"
-      : "Server OCR chưa sẵn sàng";
+    $("health").textContent =
+      {
+        unloaded: "Model đang nghỉ · tự nạp khi OCR",
+        loading: "Đang nạp model OCR…",
+        unloading: "Đang giải phóng bộ nhớ model…",
+        error: "Model gặp lỗi · sẽ thử nạp lại khi OCR",
+        ready: "Model sẵn sàng · tự nghỉ sau 5 phút",
+      }[server.model_state] ||
+      (ready ? "Server OCR sẵn sàng" : "Server OCR chưa sẵn sàng");
     $("health").classList.toggle("ready", ready);
     controls();
     const focusedJob = $("history").contains(document.activeElement)

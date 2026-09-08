@@ -85,3 +85,22 @@ olmOCR into Docling's dropdown.
 
 Sources: [olmOCR toolkit](https://github.com/allenai/olmocr),
 [vLLM installation](https://docs.vllm.ai/en/latest/getting_started/installation/gpu/).
+
+## On-demand model lifecycle
+
+Keep `start-ui.ps1` running. The UI job service now loads the WSL model automatically
+when a valid OCR job arrives and stops `olmocr-vllm.service` after 300 seconds idle.
+The timer checks once per second; service shutdown can take a few additional seconds.
+An entire UI job reserves the model, including gaps between pages. Direct vLLM
+running/waiting requests and completed-request counters also extend the idle timer.
+Health polling, viewing history, and downloading results do not extend it.
+Unknown/unavailable metrics never authorize stopping a running model.
+
+`GET /api/health` reports `ready` for accepting jobs; `model_ready` and `model_state`
+report physical model readiness. An unloaded model still accepts jobs. Cold loading
+is included in the running job and may take a few minutes; failures appear on that
+job and can be retried. No model files or OCR results are deleted on unload.
+The idle manager only runs while the UI service runs. For an explicit shutdown use
+`stop.ps1`; `stop-ui.ps1` alone stops only the UI and its idle manager.
+
+Verification: `node --test olmocr-quality/ui/model-lifecycle.test.mjs` from repo root.

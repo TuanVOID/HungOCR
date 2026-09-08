@@ -4,7 +4,8 @@ set -euo pipefail
 service_name="olmocr-vllm.service"
 
 systemctl start "$service_name"
-trap 'systemctl stop "$service_name" >/dev/null 2>&1 || true' EXIT INT TERM
+# Model shutdown is owned by stop.ps1 or the UI idle lifecycle manager.
+# An old keeper exiting must not stop a model started by a newer request.
 
 # Keeping this WSL invocation open prevents WSL from shutting down the distro
 # while the system service is the only remaining Linux workload.

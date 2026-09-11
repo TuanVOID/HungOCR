@@ -1,3 +1,4 @@
+import { linuxModelProcess } from "./linux-model-process.mjs";
 import { spawn } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 
@@ -118,6 +119,9 @@ export async function probeModel() {
 }
 
 export function createModelLifecycle(busy) {
+  if (process.env.OLMOCR_CONTAINER === "1") {
+    return new ModelLifecycle({ busy, probe: probeModel, ...linuxModelProcess(probeModel) });
+  }
   return new ModelLifecycle({
     busy,
     probe: probeModel,

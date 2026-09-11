@@ -10,11 +10,14 @@ import {
 } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { randomUUID } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import { spawn } from "node:child_process";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
-const jobsRoot = path.join(root, "..", "ui-workspace");
+const container = process.env.OLMOCR_CONTAINER === "1";
+const apiKey = process.env.OLMOCR_API_KEY || "";
+if (container && apiKey.length < 32) throw new Error("OLMOCR_API_KEY must contain at least 32 characters.");
+const jobsRoot = process.env.OLMOCR_JOBS_ROOT || path.join(root, "..", "ui-workspace");
 await mkdir(jobsRoot, { recursive: true });
 const jobs = new Map();
 let active = null;
@@ -70,8 +73,8 @@ async function execute(job) {
     await model.ensureReady();
     const dir = path.join(jobsRoot, job.id);
     const proc = spawn(
-      "wsl.exe",
-      [
+      container ? "bash" : "wsl.exe",
+      container ? [path.join(root, "..", "ocr.sh"), path.join(dir, "output"), path.join(dir, "input.pdf")] : [
         "-d",
         "Ubuntu",
         "--",
@@ -142,7 +145,7 @@ const server = http.createServer(async (req, res) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Cache-Control", "no-store");
   try {
-    if (!["127.0.0.1:8010", "localhost:8010"].includes(req.headers.host))
+    if (!container && !["127.0.0.1:8010", "localhost:8010"].includes(req.headers.host))
       return json(res, 403, { error: "Localhost only." });
     if (
       req.method === "POST" &&
@@ -153,6 +156,12 @@ const server = http.createServer(async (req, res) => {
     )
       return json(res, 403, { error: "Origin rejected." });
     const url = new URL(req.url, "http://localhost:8010");
+    if (container && !(req.method === "GET" && url.pathname === "/api/health")) {
+      const supplied = Buffer.from(req.headers.authorization || "");
+      const expected = Buffer.from(`Bearer ${apiKey}`);
+      if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected))
+        return json(res, 401, { error: "Unauthorized." });
+    }
     if (req.method === "GET" && url.pathname === "/api/health")
       return json(res, 200, {
         ready: true,
@@ -262,6 +271,6 @@ const server = http.createServer(async (req, res) => {
     else res.end();
   }
 });
-server.listen(8010, "127.0.0.1", () =>
+server.listen(8010, container ? "0.0.0.0" : "127.0.0.1", () =>
   console.log("olmOCR UI: http://localhost:8010"),
 );

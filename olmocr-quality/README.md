@@ -1,5 +1,10 @@
 # olmOCR — Quality First
 
+For the portable, authenticated Docker deployment, read
+[`docker/README-VI.md`](docker/README-VI.md). The instructions below describe the
+older local WSL workflow and remain available for development; do not run both
+model servers concurrently on a 16 GB GPU.
+
 Windows launchers use the existing WSL2 distribution `Ubuntu`. Python and CUDA
 packages are isolated in `/home/imdevil/olmocr-quality/.venv`; model weights live
 in the Linux Hugging Face cache. The Windows NVIDIA driver is shared with WSL;

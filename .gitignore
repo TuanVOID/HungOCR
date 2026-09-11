@@ -57,3 +57,5 @@ ocr_results_vietocr.txt
 models/
 benchmark/*_runs/
 
+/olmocr-quality/.docker-runtime/
+

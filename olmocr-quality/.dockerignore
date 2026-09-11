@@ -1,0 +1,8 @@
+*
+!legal_pipeline.py
+!ocr.sh
+!serve.sh
+!ui/
+!ui/**
+!docker/
+!docker/Dockerfile

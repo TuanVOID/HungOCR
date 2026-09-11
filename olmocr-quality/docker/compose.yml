@@ -1,0 +1,26 @@
+name: law-olmocr
+services:
+  olmocr:
+    image: law-olmocr:portable-v1
+    restart: unless-stopped
+    init: true
+    gpus: all
+    shm_size: 4gb
+    stop_grace_period: 45s
+    ports:
+      - "${OLMOCR_BIND_IP:-127.0.0.1}:${OLMOCR_PORT:-8011}:8010"
+    environment:
+      OLMOCR_API_KEY: ${OLMOCR_API_KEY:?Run install.ps1 first}
+      OLMOCR_GPU_MEMORY_UTILIZATION: ${OLMOCR_GPU_MEMORY_UTILIZATION:-0.86}
+    volumes:
+      - ./models:/models:ro
+      - olmocr-cache:/cache
+      - olmocr-data:/data
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+volumes:
+  olmocr-cache:
+  olmocr-data:

@@ -37,18 +37,20 @@ export VLLM_USE_V2_MODEL_RUNNER=0
 
 # This host shares its 16 GiB GPU with meeting, embedding and reranking services.
 # A single eager-mode sequence avoids CUDA graph reservation. An explicit
-# 384 MiB KV cache and 6k context keep the 7B FP8 model inside this 16 GiB GPU
+# 384 MiB KV cache (7,008 tokens) keeps the 7B FP8 model inside this 16 GiB GPU
 # while the app's other CUDA services remain online; the API serializes jobs.
+# max_pixels matches the pipeline's 1288px render so pages are not downscaled;
+# 6.5k context fits a square page's 2,116 image tokens plus 4,096 output tokens.
 vllm serve "${OLMOCR_MODEL_PATH:-allenai/olmOCR-2-7B-1025-FP8}" \
   --host 127.0.0.1 --port 8000 \
   --served-model-name olmocr \
-  --max-model-len 6144 \
+  --max-model-len 6656 \
   --gpu-memory-utilization "${OLMOCR_GPU_MEMORY_UTILIZATION:-0.85}" \
   --kv-cache-memory-bytes 384M \
   --max-num-seqs 1 \
   --enforce-eager \
   --tensor-parallel-size 1 \
-  --mm-processor-kwargs '{"max_pixels":589824}' \
+  --mm-processor-kwargs '{"max_pixels":1658944}' \
   --limit-mm-per-prompt '{"image":1,"video":0}' &
 
 VLLM_PID=$!

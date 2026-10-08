@@ -3,6 +3,7 @@
 import base64
 import os
 import re
+import unicodedata
 from argparse import Namespace
 from contextvars import ContextVar
 from dataclasses import replace
@@ -16,6 +17,15 @@ from PIL import Image
 HEADER_PASS: ContextVar[bool] = ContextVar("header_pass", default=False)
 ORIGINAL_QUERY = pipeline.build_page_query
 ORIGINAL_PAGE = pipeline.process_page
+# The document-type title and the "Căn cứ" preamble both end the opening
+# identification block; the preamble repeats authority names.
+TITLE = re.compile(
+    r"^\s*(?:#{1,6}\s*)?(?:LUẬT|BỘ LUẬT|NGHỊ QUYẾT|NGHỊ ĐỊNH|"
+    r"QUYẾT ĐỊNH|THÔNG TƯ|CHỈ THỊ|PHÁP LỆNH|CÔNG VĂN|THÔNG BÁO|"
+    r"BÁO CÁO|KẾ HOẠCH|TỜ TRÌNH)\s*$",
+    re.MULTILINE | re.IGNORECASE,
+)
+PREAMBLE = re.compile(r"^\s*(?:[*_]+\s*)?Căn cứ", re.MULTILINE | re.IGNORECASE)
 
 
 async def build_query(
@@ -28,7 +38,7 @@ async def build_query(
     query = await ORIGINAL_QUERY(
         local_pdf_path, page, target_longest_image_dim, image_rotation, model_name
     )
-    # Keep each page request within the locally tuned 6k vLLM context window.
+    # Keep each page request within the locally tuned 6.5k vLLM context window.
     # 4k output tokens is ample for a dense legal page and leaves room for the
     # rendered image and preservation prompt.
     query["max_tokens"] = int(os.getenv("OLMOCR_MAX_OUTPUT_TOKENS", "4096"))
@@ -75,13 +85,7 @@ async def process_page(
     text = header.response.natural_text or ""
     # A crop can overlap the title. Never prepend that title/body a second time,
     # even when the model ignores the identification-only instruction.
-    title = re.search(
-        r"^\s*(?:#{1,6}\s*)?(?:LUẬT|BỘ LUẬT|NGHỊ QUYẾT|NGHỊ ĐỊNH|"
-        r"QUYẾT ĐỊNH|THÔNG TƯ|CHỈ THỊ|PHÁP LỆNH|CÔNG VĂN|THÔNG BÁO|"
-        r"BÁO CÁO|KẾ HOẠCH|TỜ TRÌNH)\s*$",
-        text,
-        re.MULTILINE | re.IGNORECASE,
-    )
+    title = TITLE.search(text)
     if title is not None:
         text = text[: title.start()].strip()
     # Require evidence of a document identification block, not ordinary body text.
@@ -92,15 +96,7 @@ async def process_page(
             "No reliable opening identification block recovered for %s", pdf_orig_path
         )
         return result
-    body = result.response.natural_text or ""
-    existing_lines = {line.strip() for line in body[:1200].splitlines()}
-    lines = [
-        line
-        for line in text.splitlines()
-        if line.strip() and line.strip() not in existing_lines
-    ]
-    if lines:
-        body = "\n".join(lines) + "\n\n" + body
+    body = merge_opening_block(text, result.response.natural_text or "")
     pipeline.logger.info(
         "Recovered opening identification block for %s: %s", pdf_orig_path, text
     )
@@ -110,6 +106,27 @@ async def process_page(
         input_tokens=result.input_tokens + header.input_tokens,
         output_tokens=result.output_tokens + header.output_tokens,
     )
+
+
+def _comparable(text: str) -> str:
+    # The body pass may join both identification columns on one line or wrap
+    # them in markdown, so compare words rather than line layout.
+    text = unicodedata.normalize("NFC", re.sub(r"[*#|]", " ", text))
+    return " ".join(text.split()).casefold()
+
+
+def merge_opening_block(header: str, body: str) -> str:
+    """Prepend only the header lines that the body's opening does not contain."""
+    ends = [m.start() for m in (TITLE.search(body), PREAMBLE.search(body)) if m]
+    opening = _comparable(body[: min([1200, *ends])])
+    lines = [
+        line
+        for line in header.splitlines()
+        if line.strip() and _comparable(line) not in opening
+    ]
+    if not lines:
+        return body
+    return "\n".join(lines) + "\n\n" + body
 
 
 def build_legal_prompt() -> str:

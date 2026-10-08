@@ -1,6 +1,7 @@
 """Run the official olmOCR pipeline with a legal-document preservation prompt."""
 
 import base64
+import os
 import re
 from argparse import Namespace
 from contextvars import ContextVar
@@ -27,6 +28,10 @@ async def build_query(
     query = await ORIGINAL_QUERY(
         local_pdf_path, page, target_longest_image_dim, image_rotation, model_name
     )
+    # Keep each page request within the locally tuned 6k vLLM context window.
+    # 4k output tokens is ample for a dense legal page and leaves room for the
+    # rendered image and preservation prompt.
+    query["max_tokens"] = int(os.getenv("OLMOCR_MAX_OUTPUT_TOKENS", "4096"))
     if not HEADER_PASS.get():
         return query
     content = query["messages"][0]["content"]

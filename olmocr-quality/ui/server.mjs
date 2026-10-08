@@ -167,9 +167,14 @@ const server = http.createServer(async (req, res) => {
         ready: true,
         model_ready: model.state === "ready",
         model_state: model.state,
-        idle_timeout_seconds: 300,
+        idle_timeout_seconds: Math.round(model.idleMs / 1000),
         active,
       });
+    if (req.method === "POST" && url.pathname === "/api/release-gpu") {
+      if (active) return json(res, 409, { error: "Đang có job OCR chạy, không thể nhả GPU lúc này." });
+      await model.unload();
+      return json(res, 200, { success: true, message: "Đã giải phóng GPU và bật lại Qwen." });
+    }
     if (req.method === "GET" && url.pathname === "/api/jobs")
       return json(res, 200, [...jobs.values()].reverse().map(publicJob));
     if (

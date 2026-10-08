@@ -11,6 +11,8 @@ function fixture() {
     stops: 0,
   };
   const model = new ModelLifecycle({
+    // The timing scenarios below use a five-minute window, not the default.
+    idleMs: 300000,
     now: () => data.time,
     busy: () => data.busy,
     probe: async () => data.observation,

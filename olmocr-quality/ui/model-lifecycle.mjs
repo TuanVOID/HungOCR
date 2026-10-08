@@ -2,8 +2,10 @@ import { linuxModelProcess } from "./linux-model-process.mjs";
 import { spawn } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 
+const defaultIdleMs = (Number(process.env.OLMOCR_IDLE_SECONDS) || 30) * 1000;
+
 export class ModelLifecycle {
-  constructor({ probe, start, stop, busy, now = Date.now, idleMs = 300000 }) {
+  constructor({ probe, start, stop, busy, now = Date.now, idleMs = defaultIdleMs }) {
     Object.assign(this, { probe, start, stop, busy, now, idleMs });
     this.lastUsed = now();
     this.state = "unloaded";
@@ -58,6 +60,20 @@ export class ModelLifecycle {
         this.touch();
       this.counter = observation.counter;
       if (this.busy() || this.now() - this.lastUsed < this.idleMs) return;
+      this.state = "unloading";
+      try {
+        await this.stop();
+        this.state = "unloaded";
+      } catch (error) {
+        this.state = "error";
+        this.touch();
+        throw error;
+      }
+    });
+  }
+  unload() {
+    return this.serialize(async () => {
+      if (this.state === "unloaded") return;
       this.state = "unloading";
       try {
         await this.stop();

@@ -12,10 +12,15 @@ services:
     environment:
       OLMOCR_API_KEY: ${OLMOCR_API_KEY:?Run install.ps1 first}
       OLMOCR_GPU_MEMORY_UTILIZATION: ${OLMOCR_GPU_MEMORY_UTILIZATION:-0.86}
+      OLMOCR_IDLE_SECONDS: ${OLMOCR_IDLE_SECONDS:-30}
     volumes:
       - ./models:/models:ro
+      - ./overrides/serve.sh:/app/serve.sh:ro
+      - ./source/legal_pipeline.py:/app/legal_pipeline.py:ro
+      - ./source/ui:/app/ui:ro
       - olmocr-cache:/cache
       - olmocr-data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
     logging:
       driver: json-file
       options:
